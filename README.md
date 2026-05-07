@@ -48,8 +48,7 @@ It feels like Apple Pay, but instead of NFC it uses sound — so it works withou
 
 ```
 .
-├── README.md                          ← you are here
-├── CONTINUE.md                        ← multi-session handoff doc
+├── README.md
 ├── whisper/                           ← Mobile app (Expo SDK 52, RN 0.76.9)
 │   ├── App.tsx
 │   ├── app.json                       ← name=Chirp, plugins, perms
@@ -77,48 +76,51 @@ It feels like Apple Pay, but instead of NFC it uses sound — so it works withou
 
 ---
 
-## Running it locally
+## Setup
 
-You need three terminals on the same wifi as the phone, plus a Solana Mobile Seeker (or any Android dev client).
+**Prereqs:** Node 20+, an Android device (Solana Mobile Seeker recommended) on the same wifi as your laptop, `adb`, and the [EAS CLI](https://docs.expo.dev/eas/) (`npm i -g eas-cli`) if you need to build the dev client.
 
-### 1. Relay (terminal A)
+Find your laptop's LAN IP — you'll need it for the mobile env var:
+
+```bash
+ipconfig getifaddr en0          # macOS wifi
+# or: hostname -I | awk '{print $1}'   # Linux
+```
+
+### 1. Relay server
 
 ```bash
 cd whisper/relay-server
 npm install
 PORT=8787 npm run dev
-# listens on :8787 — health check at /health
+# health check: curl http://localhost:8787/health
 ```
 
-### 2. Web cashier (terminal B)
+### 2. Web cashier terminal
 
 ```bash
 cd terminal-web
 npm install
 npm run dev
-# http://localhost:3000  →  onboarding
-# http://localhost:3000/terminal  →  cashier (after creating/pasting a wallet)
+# open http://localhost:3000
 ```
 
-### 3. Mobile dev client (terminal C)
+### 3. Mobile app
 
 ```bash
 cd whisper
 npm install
-# pull devnet config + LAN IP
 export EXPO_PUBLIC_WHISPER_RELAY_URL="http://<your-laptop-lan-ip>:8787"
 export EXPO_PUBLIC_WHISPER_CHIRP=audio   # or "relay" for HTTP fallback
 npx expo start --dev-client
 ```
 
-If you don't already have a Chirp dev client APK installed on the device:
+If you don't already have a Chirp dev client APK on the device:
 
 ```bash
-# one-time, ~10–15 min cloud build:
 eas build --profile development --platform android
-# install the resulting APK:
-curl -L -o /tmp/chirp.apk "<URL EAS prints>"
-adb install -r /tmp/chirp.apk
+# then install the APK that EAS prints:
+adb install -r <path-to-apk>
 ```
 
 If the device can't reach Metro over wifi (firewall / AP isolation), use USB tunneling:
@@ -129,24 +131,6 @@ adb reverse tcp:8787 tcp:8787
 adb shell am start -a android.intent.action.VIEW \
   -d 'exp+whisper://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
 ```
-
-### 4. Demo flow
-
-1. **Cashier** (`/terminal`) — create or paste a wallet, build a menu (default has Espresso/Latte/Croissant), tap **Broadcast**. The terminal chirps every 5 s and starts listening on the mic.
-2. **Phone** — open Chirp → **Home** → connect Phantom → **Pay** tab → **Start listening**. Hold near the laptop. The menu lands within ~3–6 s with the merchant's verify code.
-3. **Phone** — pick an item (or enter a custom amount) → **Place order →**. Phone chirps the order back; cashier shows a glassy `Order toast` and chimes.
-4. **Phone** — Phantom opens, sign + submit. Customer screen shows the white-check confirmation with a tappable signature link to Solana Explorer.
-5. **Cashier** — full-screen `Paid` overlay with the amount + bird chime.
-6. **Phone** — open the **Receipts** tab; the payment is now persisted there with a one-tap link to its Explorer page.
-
----
-
-## Hackathon submission checklist
-
-- [x] **Functional Android APK** — `eas build --profile development --platform android` (or `--profile preview` for a non-dev-client APK). The current build artifact lives at the EAS dashboard for project `whisper` (slug retained for project-id stability; the app name in `app.json` is `Chirp`).
-- [x] **GitHub repository** — this repo.
-- [ ] **Demo video / presentation** — record after the live demo works on hardware.
-- [x] **Brief paragraph** — see [What it is](#what-it-is) + [Why people would want to use it](#why-people-would-want-to-use-it).
 
 ---
 
