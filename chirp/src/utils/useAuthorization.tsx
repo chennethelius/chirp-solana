@@ -6,6 +6,7 @@ import {
   AuthorizeAPI,
   AuthToken,
   Base64EncodedAddress,
+  Chain,
   DeauthorizeAPI,
   SignInPayloadWithRequiredFields,
   SignInPayload,
@@ -18,7 +19,7 @@ import { CHIRP_CONFIG } from "../config";
 
 const CHAIN = "solana";
 const CLUSTER = CHIRP_CONFIG.cluster;
-const CHAIN_IDENTIFIER = `${CHAIN}:${CLUSTER}`;
+const CHAIN_IDENTIFIER = `${CHAIN}:${CLUSTER}` as Chain;
 
 export type Account = Readonly<{
   address: Base64EncodedAddress;
