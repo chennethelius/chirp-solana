@@ -1,0 +1,40 @@
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+.claude/
+
+# stray empty eas marker file (not the eas CLI)
+/eas
+
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+
+# Expo / EAS
+**/.expo/
+**/dist/
+**/web-build/
+*.apk
+.eas/
+
+# Next.js
+**/.next/
+**/out/
+**/build/
+.next/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local logs / scratch
+/tmp/
+*.log
