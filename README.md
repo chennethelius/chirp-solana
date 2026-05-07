@@ -1,4 +1,4 @@
-# Chirp — pay by sound, on Solana
+# Chirp. Pay by sound, on Solana
 
 > **Built for the Easy A "Build for the dApp Store" hackathon · Solana Mobile track.**
 
