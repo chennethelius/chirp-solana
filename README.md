@@ -2,6 +2,8 @@
 
 > **Built for the Easy A "Build for the dApp Store" hackathon · Solana Mobile track.**
 
+**Demo video:** https://youtu.be/9eUoUFxS3XQ
+
 ## What it is
 
 **Chirp is a Solana payments app where money moves between two devices that can hear each other.**
@@ -19,6 +21,14 @@ It feels like Apple Pay, but instead of NFC it uses sound — so it works withou
 - **Real Solana.** Every payment is a real on-chain transaction. Customer signs with their own wallet (Phantom via Mobile Wallet Adapter on the Seeker). Merchant never holds the funds. SOL or USDC.
 - **Verifiable.** Each completed payment shows a tappable signature that opens Solana Explorer — useful both as a receipt and as proof to the merchant.
 - **Built for Solana Mobile.** Chirp is designed around the Seeker's strengths: Seed Vault as the signing root, MWA as the protocol, and the device's better-than-laptop microphone and speaker for clean ultrasonic capture.
+
+---
+
+## Screenshots
+
+| Home | Listening | Menu | Review | Paid |
+| --- | --- | --- | --- | --- |
+| ![Home](chirp/screenshots/01-home.png) | ![Listening](chirp/screenshots/02-listening.png) | ![Menu](chirp/screenshots/03-menu.png) | ![Review](chirp/screenshots/04-review.png) | ![Paid](chirp/screenshots/05-paid.png) |
 
 ---
 
@@ -40,7 +50,7 @@ It feels like Apple Pay, but instead of NFC it uses sound — so it works withou
 **Two layers:**
 
 1. **Audio chirp** — 4-tone FSK in the 19–20.5 kHz band (above adult hearing). 50 ms per symbol, 6-symbol preamble + 44-symbol payload (11 bytes) + 2-symbol postamble. CRC16-CCITT. Pure JS, runs identically on web (Web Audio API) and mobile (`react-native-audio-api`). Each chirp is prefaced with a short audible bird trill — three FM glide pulses at 2.8–4.6 kHz — that's just brand and "something happened" feedback; data still travels in ultrasonic.
-2. **Relay** — a tiny Hono HTTP server (`whisper/relay-server/`) where the chirp payload lives. The 11-byte chirp carries an opaque 8-character ID; both sides resolve that ID via `/lookup/:id` to a session, intent, or order with full context (merchant pubkey, menu items, item picked, payer pubkey, etc.). In-memory store with TTL — fine for the hackathon, would map cleanly to KV on Vercel.
+2. **Relay** — a tiny Hono HTTP server (`chirp/relay-server/`) where the chirp payload lives. The 11-byte chirp carries an opaque 8-character ID; both sides resolve that ID via `/lookup/:id` to a session, intent, or order with full context (merchant pubkey, menu items, item picked, payer pubkey, etc.). In-memory store with TTL — fine for the hackathon, would map cleanly to KV on Vercel.
 
 ---
 
@@ -49,7 +59,7 @@ It feels like Apple Pay, but instead of NFC it uses sound — so it works withou
 ```
 .
 ├── README.md
-├── whisper/                           ← Mobile app (Expo SDK 52, RN 0.76.9)
+├── chirp/                             ← Mobile app (Expo SDK 52, RN 0.76.9)
 │   ├── App.tsx
 │   ├── app.json                       ← name=Chirp, plugins, perms
 │   ├── eas.json
@@ -90,7 +100,7 @@ ipconfig getifaddr en0          # macOS wifi
 ### 1. Relay server
 
 ```bash
-cd whisper/relay-server
+cd chirp/relay-server
 npm install
 PORT=8787 npm run dev
 # health check: curl http://localhost:8787/health
@@ -108,10 +118,10 @@ npm run dev
 ### 3. Mobile app
 
 ```bash
-cd whisper
+cd chirp
 npm install
-export EXPO_PUBLIC_WHISPER_RELAY_URL="http://<your-laptop-lan-ip>:8787"
-export EXPO_PUBLIC_WHISPER_CHIRP=audio   # or "relay" for HTTP fallback
+export EXPO_PUBLIC_CHIRP_RELAY_URL="http://<your-laptop-lan-ip>:8787"
+export EXPO_PUBLIC_CHIRP_MODE=audio   # or "relay" for HTTP fallback
 npx expo start --dev-client
 ```
 
@@ -130,6 +140,8 @@ adb reverse tcp:8081 tcp:8081
 adb reverse tcp:8787 tcp:8787
 adb shell am start -a android.intent.action.VIEW \
   -d 'exp+whisper://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
+# (URL scheme reflects the original Expo slug; the installed APK still
+#  registers exp+whisper://. App, brand, and code paths are all "chirp".)
 ```
 
 ---
@@ -139,7 +151,7 @@ adb shell am start -a android.intent.action.VIEW \
 The FSK protocol has a Node-side test harness with 10 cases — clean roundtrip, white noise, attenuation, sample-offset, multi-frame, plus four IRL channel sims (BlackHole loopback, near-field, at-counter, and "1 m away with espresso machine + heavy echo"):
 
 ```bash
-cd whisper
+cd chirp
 npx tsx src/services/audio/fsk.test.ts
 ```
 

@@ -182,11 +182,11 @@ Defaults assume Android emulator on the same machine as the relay
 (`http://10.0.2.2:8787`). For real devices or another laptop, set:
 
 ```
-export EXPO_PUBLIC_WHISPER_RELAY_URL=https://your-relay.vercel.app
-export EXPO_PUBLIC_WHISPER_CHANNEL=demo
+export EXPO_PUBLIC_CHIRP_RELAY_URL=https://your-relay.vercel.app
+export EXPO_PUBLIC_CHIRP_CHANNEL=demo
 export EXPO_PUBLIC_HELIUS_RPC=https://devnet.helius-rpc.com/?api-key=YOUR_KEY
 # default audio mode; set to "relay" to use HTTP fake-chirp instead.
-export EXPO_PUBLIC_WHISPER_CHIRP=audio
+export EXPO_PUBLIC_CHIRP_MODE=audio
 ```
 
 ### 3. Run the app

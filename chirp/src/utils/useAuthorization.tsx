@@ -14,10 +14,10 @@ import { toUint8Array } from "js-base64";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
-import { WHISPER_CONFIG } from "../config";
+import { CHIRP_CONFIG } from "../config";
 
 const CHAIN = "solana";
-const CLUSTER = WHISPER_CONFIG.cluster;
+const CLUSTER = CHIRP_CONFIG.cluster;
 const CHAIN_IDENTIFIER = `${CHAIN}:${CLUSTER}`;
 
 export type Account = Readonly<{

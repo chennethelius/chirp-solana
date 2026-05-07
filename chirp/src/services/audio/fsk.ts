@@ -13,7 +13,7 @@
 export const SAMPLE_RATE = 48_000;
 // Pushed up toward the inaudible band (most adults can't hear above ~17 kHz,
 // teens up to ~20 kHz). Stays below the 24 kHz Nyquist limit at 48 kHz sample
-// rate. Must match exactly between terminal-web and whisper.
+// rate. Must match exactly between terminal-web and chirp.
 export const TONES = [19_000, 19_500, 20_000, 20_500] as const;
 export const SYMBOL_MS = 50;
 export const SYMBOL_SAMPLES = (SAMPLE_RATE * SYMBOL_MS) / 1000;

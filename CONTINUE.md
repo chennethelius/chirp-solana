@@ -6,7 +6,7 @@
 
 ```
 /Users/maxchen/consensus_hackathon/
-├── whisper/                    # Mobile app (Expo SDK 52, RN 0.76.9)
+├── chirp/                    # Mobile app (Expo SDK 52, RN 0.76.9)
 │   ├── src/
 │   │   ├── services/audio/fsk.ts          # 4-tone FSK, pure JS, Goertzel decoder
 │   │   ├── services/audio/audioChirpChannel.ts  # react-native-audio-api wrapper
@@ -59,7 +59,7 @@
 - **50 ms per symbol**, 6-symbol preamble + 44-symbol payload (11 bytes) + 2-symbol postamble = **2.6 s frame**
 - Goertzel filter at the 4 tones, argmax with SNR ≥ 1.5
 - CRC16-CCITT for error detection
-- Run tests: `cd whisper && npx tsx src/services/audio/fsk.test.ts` — 10/10 pass including IRL acoustic simulation (espresso machine + 1m + heavy echo)
+- Run tests: `cd chirp && npx tsx src/services/audio/fsk.test.ts` — 10/10 pass including IRL acoustic simulation (espresso machine + 1m + heavy echo)
 
 ## Security model
 
@@ -113,7 +113,7 @@ User does NOT yet have:
 ### 1. Wait for EAS build to complete
 User runs:
 ```bash
-cd /Users/maxchen/consensus_hackathon/whisper
+cd /Users/maxchen/consensus_hackathon/chirp
 eas build --profile development --platform android
 ```
 EAS prints a build URL. ~10-15 min wait.
@@ -121,23 +121,23 @@ EAS prints a build URL. ~10-15 min wait.
 ### 2. Install the APK on the Seeker
 Once EAS finishes:
 ```bash
-curl -L -o whisper-dev.apk "URL_FROM_EAS"
-adb install -r whisper-dev.apk
+curl -L -o chirp-dev.apk "URL_FROM_EAS"
+adb install -r chirp-dev.apk
 ```
 
 ### 3. Start the three services (3 terminals)
 ```bash
 # Terminal A — relay
-cd whisper/relay-server && PORT=8787 npm run dev
+cd chirp/relay-server && PORT=8787 npm run dev
 
 # Terminal B — web terminal
 cd terminal-web && npm run dev   # http://192.168.1.62:3000
 
 # Terminal C — Metro for the Seeker
-cd whisper
-export EXPO_PUBLIC_WHISPER_RELAY_URL="http://192.168.1.62:8787"
-export EXPO_PUBLIC_WHISPER_CHANNEL=demo
-export EXPO_PUBLIC_WHISPER_CHIRP=audio
+cd chirp
+export EXPO_PUBLIC_CHIRP_RELAY_URL="http://192.168.1.62:8787"
+export EXPO_PUBLIC_CHIRP_CHANNEL=demo
+export EXPO_PUBLIC_CHIRP_MODE=audio
 npx expo start --dev-client
 ```
 
@@ -158,15 +158,15 @@ solana airdrop 2 SEEKER_PUBKEY
 
 ## Most likely failure modes (in priority order)
 
-1. **`react-native-audio-api` autolinking on Expo 52** — if EAS build fails or runtime errors mention worklets/native modules, set `"newArchEnabled": true` in `app.json` expo block, rebuild dev client. Fallback: `EXPO_PUBLIC_WHISPER_CHIRP=relay` (HTTP fake-chirp) to ship the UX flow without audio.
+1. **`react-native-audio-api` autolinking on Expo 52** — if EAS build fails or runtime errors mention worklets/native modules, set `"newArchEnabled": true` in `app.json` expo block, rebuild dev client. Fallback: `EXPO_PUBLIC_CHIRP_MODE=relay` (HTTP fake-chirp) to ship the UX flow without audio.
 
-2. **Laptop speakers don't reach 19 kHz cleanly** — many built-in laptop speakers roll off hard. If Seeker doesn't decode, try external speakers, or shift the FSK band down (edit `TONES` in `whisper/src/services/audio/fsk.ts` AND `terminal-web/lib/fsk.ts` — must match — to e.g., `[15500, 16000, 16500, 17000]`).
+2. **Laptop speakers don't reach 19 kHz cleanly** — many built-in laptop speakers roll off hard. If Seeker doesn't decode, try external speakers, or shift the FSK band down (edit `TONES` in `chirp/src/services/audio/fsk.ts` AND `terminal-web/lib/fsk.ts` — must match — to e.g., `[15500, 16000, 16500, 17000]`).
 
 3. **Devnet RPC unreliable** — public devnet sometimes 30+ s confirms. Get a Helius API key and set `EXPO_PUBLIC_HELIUS_RPC=https://devnet.helius-rpc.com/?api-key=KEY`.
 
 4. **Audio context suspended** — browser AudioContext starts suspended until user gesture. The `audioEmitter.ts` calls `ctx.resume()` first; if first chirp fails, the next user click fixes it.
 
-5. **Phone can't reach relay** — phone and laptop must be on same wifi. Check laptop firewall. Or use ngrok: `ngrok http 8787`, then update `EXPO_PUBLIC_WHISPER_RELAY_URL` to the ngrok URL and restart Metro.
+5. **Phone can't reach relay** — phone and laptop must be on same wifi. Check laptop firewall. Or use ngrok: `ngrok http 8787`, then update `EXPO_PUBLIC_CHIRP_RELAY_URL` to the ngrok URL and restart Metro.
 
 ## Tooling status
 
@@ -186,7 +186,7 @@ solana airdrop 2 SEEKER_PUBKEY
 - Functional Android APK → `eas build --platform android --profile preview`
 - GitHub repo → push the project to a repo
 - Demo video → record after the live demo works
-- Brief paragraph → see "What it is" in `whisper/README.md` opening lines
+- Brief paragraph → see "What it is" in `chirp/README.md` opening lines
 
 ## Key contextual decisions made earlier
 
@@ -199,9 +199,9 @@ solana airdrop 2 SEEKER_PUBKEY
 
 ## Files an agent might want to read first
 
-1. `whisper/README.md` — security model + architecture overview
-2. `whisper/docs/RUN_ON_DEVICES.md` — full device setup walkthrough
-3. `whisper/src/services/audio/fsk.ts` — the protocol
-4. `whisper/relay-server/src/server.ts` — the relay
+1. `chirp/README.md` — security model + architecture overview
+2. `chirp/docs/RUN_ON_DEVICES.md` — full device setup walkthrough
+3. `chirp/src/services/audio/fsk.ts` — the protocol
+4. `chirp/relay-server/src/server.ts` — the relay
 5. `terminal-web/app/terminal/page.tsx` — the merchant UI
-6. `whisper/src/screens/CustomerScreen.tsx` — the customer flow
+6. `chirp/src/screens/CustomerScreen.tsx` — the customer flow

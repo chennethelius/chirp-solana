@@ -24,7 +24,7 @@ You'll also need:
 ## Step 1 — Get the laptop ready
 
 ```bash
-cd /Users/maxchen/consensus_hackathon/whisper
+cd /Users/maxchen/consensus_hackathon/chirp
 
 # Verify everything is installed
 adb version           # Android Debug Bridge ≥ 1.0.41
@@ -66,7 +66,7 @@ This is a one-time cloud build. Subsequent code changes don't need a rebuild;
 they hot-reload via Metro.
 
 ```bash
-cd /Users/maxchen/consensus_hackathon/whisper
+cd /Users/maxchen/consensus_hackathon/chirp
 eas build --profile development --platform android
 ```
 
@@ -74,14 +74,14 @@ EAS prompts about credentials; let it generate them. The build takes ~10-15
 minutes. When it finishes, EAS prints a download URL. Either:
 
 - **Easy**: download the APK on each phone via Chrome and tap to install
-- **Faster**: download once on the laptop, then `adb install -r whisper-*.apk`
+- **Faster**: download once on the laptop, then `adb install -r chirp-*.apk`
   to each device:
 
 ```bash
 # Once EAS gives you the URL:
-curl -L -o whisper-dev.apk "https://expo.dev/.../build.apk"
-adb -s ABC123XYZ install -r whisper-dev.apk
-adb -s DEF456UVW install -r whisper-dev.apk
+curl -L -o chirp-dev.apk "https://expo.dev/.../build.apk"
+adb -s ABC123XYZ install -r chirp-dev.apk
+adb -s DEF456UVW install -r chirp-dev.apk
 ```
 
 ## Step 4 — Run the relay over ngrok
@@ -92,7 +92,7 @@ that.
 In **Terminal A** (relay server):
 
 ```bash
-cd /Users/maxchen/consensus_hackathon/whisper/relay-server
+cd /Users/maxchen/consensus_hackathon/chirp/relay-server
 PORT=8787 npm run dev
 ```
 
@@ -110,16 +110,16 @@ you'll need it for the next step.
 In **Terminal C** (Metro):
 
 ```bash
-cd /Users/maxchen/consensus_hackathon/whisper
+cd /Users/maxchen/consensus_hackathon/chirp
 
 # Tell the app where the relay lives
-export EXPO_PUBLIC_WHISPER_RELAY_URL="https://YOUR-NGROK-URL.ngrok-free.app"
-export EXPO_PUBLIC_WHISPER_CHANNEL=demo
+export EXPO_PUBLIC_CHIRP_RELAY_URL="https://YOUR-NGROK-URL.ngrok-free.app"
+export EXPO_PUBLIC_CHIRP_CHANNEL=demo
 # Optional: better RPC reliability
 export EXPO_PUBLIC_HELIUS_RPC="https://devnet.helius-rpc.com/?api-key=YOUR_KEY"
 
 # Audio mode is the default; explicit for clarity
-export EXPO_PUBLIC_WHISPER_CHIRP=audio
+export EXPO_PUBLIC_CHIRP_MODE=audio
 
 npx expo start --dev-client
 ```
@@ -174,7 +174,7 @@ For the demo I recommend **SOL only** — it's fully devnet-airdroppable.
 4. Phone is now chirping every 5s
 
 **Phone B (customer)**:
-1. Tap **Customer** tab — status bar says "🎧 Listening for whispers…"
+1. Tap **Customer** tab — status bar says "🎧 Listening for chirps…"
 2. Hold near phone A
 3. Within ~3 seconds: a card slides up showing the same 4-digit code,
    merchant address, and an amount input
@@ -243,7 +243,7 @@ EAS returns a public URL. That URL goes in the hackathon submission.
 - Avoid Bluetooth headphones connected (audio gets routed away from
   speakers)
 - Check Metro logs for FskDecoder errors
-- Fallback: `EXPO_PUBLIC_WHISPER_CHIRP=relay` to verify the rest of the
+- Fallback: `EXPO_PUBLIC_CHIRP_MODE=relay` to verify the rest of the
   flow works while audio is being debugged
 
 ### Tx submits but never confirms
@@ -253,12 +253,12 @@ EAS returns a public URL. That URL goes in the hackathon submission.
 
 ### ngrok URL stopped working
 - Free ngrok URLs change on each restart. Re-run `ngrok http 8787`, copy
-  the new URL, restart Metro with the new `EXPO_PUBLIC_WHISPER_RELAY_URL`.
+  the new URL, restart Metro with the new `EXPO_PUBLIC_CHIRP_RELAY_URL`.
 - For a stable URL, ngrok paid plan or deploy the relay to Vercel/Fly.
 
 ### "react-native-audio-api" complains at runtime
 - This package wants Expo SDK 52 with the new architecture. If a build
   error mentions worklets or autolinking, set `"newArchEnabled": true` in
   `app.json`'s expo block and rebuild the dev client.
-- Worst case fallback: `EXPO_PUBLIC_WHISPER_CHIRP=relay` ships everything
+- Worst case fallback: `EXPO_PUBLIC_CHIRP_MODE=relay` ships everything
   except the actual audio while you debug.

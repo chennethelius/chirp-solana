@@ -38,7 +38,7 @@ import {
   formatAmount,
   USDC_DEVNET_MINT,
 } from "../services/payment";
-import { WHISPER_CONFIG } from "../config";
+import { CHIRP_CONFIG } from "../config";
 import { haptic } from "../utils/haptics";
 import { useBalance } from "../utils/useBalance";
 import { BalancePill } from "../components/ui/BalanceCard";
@@ -129,7 +129,7 @@ export function CustomerScreen() {
     if (!selectedAccount || !micActive) return;
 
     const channel = getChirpChannel();
-    const relay = new RelayClient(WHISPER_CONFIG.relayBaseUrl);
+    const relay = new RelayClient(CHIRP_CONFIG.relayBaseUrl);
 
     let unsubDebug: (() => void) | undefined;
     if (channel instanceof AudioChirpChannel) {
@@ -311,7 +311,7 @@ export function CustomerScreen() {
     const intent = cur.intent;
     const pickedItem = cur.pickedItem;
     const sessionId = intent.requestId;
-    const relay = new RelayClient(WHISPER_CONFIG.relayBaseUrl);
+    const relay = new RelayClient(CHIRP_CONFIG.relayBaseUrl);
     const payerKey = selectedAccount.publicKey.toBase58();
 
     // Phase 1 — chirp the order to the cashier.
@@ -446,7 +446,7 @@ export function CustomerScreen() {
 
       {status.kind === "idle" && micActive && (
         <Card>
-          <Text style={styles.cardTitle}>Listening for whispers…</Text>
+          <Text style={styles.cardTitle}>Listening for chirps…</Text>
           <Text style={styles.cardBody}>
             Hold your phone close to a Chirp terminal. The menu will appear
             here automatically.

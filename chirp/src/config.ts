@@ -5,12 +5,12 @@ const CLUSTER_DEFAULTS: Record<string, string> = {
 };
 
 const CLUSTER =
-  process.env.EXPO_PUBLIC_WHISPER_CLUSTER ?? "devnet";
+  process.env.EXPO_PUBLIC_CHIRP_CLUSTER ?? "devnet";
 
-export const WHISPER_CONFIG = {
+export const CHIRP_CONFIG = {
   relayBaseUrl:
-    process.env.EXPO_PUBLIC_WHISPER_RELAY_URL ?? "http://10.0.2.2:8787",
-  chirpChannelId: process.env.EXPO_PUBLIC_WHISPER_CHANNEL ?? "demo",
+    process.env.EXPO_PUBLIC_CHIRP_RELAY_URL ?? "http://10.0.2.2:8787",
+  chirpChannelId: process.env.EXPO_PUBLIC_CHIRP_CHANNEL ?? "demo",
   cluster: CLUSTER,
   heliusRpc:
     process.env.EXPO_PUBLIC_HELIUS_RPC ??

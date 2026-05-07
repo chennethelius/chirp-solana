@@ -1,6 +1,6 @@
 import { ChirpChannel } from "./chirp";
 import { DevRelayChirpChannel } from "./chirpChannelDev";
-import { WHISPER_CONFIG } from "../config";
+import { CHIRP_CONFIG } from "../config";
 
 let cached: ChirpChannel | null = null;
 
@@ -8,19 +8,19 @@ let cached: ChirpChannel | null = null;
  * Resolve the active ChirpChannel.
  *
  * Default: real audio (FSK ultrasonic via react-native-audio-api).
- * Set EXPO_PUBLIC_WHISPER_CHIRP=relay to fall back to the HTTP relay channel
+ * Set EXPO_PUBLIC_CHIRP_MODE=relay to fall back to the HTTP relay channel
  * — useful when the audio API isn't available (Expo Go, simulator without
  * mic, etc).
  */
 export function getChirpChannel(): ChirpChannel {
   if (cached) return cached;
 
-  const mode = process.env.EXPO_PUBLIC_WHISPER_CHIRP ?? "audio";
+  const mode = process.env.EXPO_PUBLIC_CHIRP_MODE ?? "audio";
 
   if (mode === "relay") {
     cached = new DevRelayChirpChannel(
-      WHISPER_CONFIG.relayBaseUrl,
-      WHISPER_CONFIG.chirpChannelId,
+      CHIRP_CONFIG.relayBaseUrl,
+      CHIRP_CONFIG.chirpChannelId,
     );
     return cached;
   }
@@ -34,12 +34,12 @@ export function getChirpChannel(): ChirpChannel {
     return cached!;
   } catch (e) {
     console.warn(
-      "[whisper] AudioChirpChannel unavailable, falling back to relay:",
+      "[chirp] AudioChirpChannel unavailable, falling back to relay:",
       e,
     );
     cached = new DevRelayChirpChannel(
-      WHISPER_CONFIG.relayBaseUrl,
-      WHISPER_CONFIG.chirpChannelId,
+      CHIRP_CONFIG.relayBaseUrl,
+      CHIRP_CONFIG.chirpChannelId,
     );
     return cached;
   }
