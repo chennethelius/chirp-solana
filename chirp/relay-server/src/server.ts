@@ -274,5 +274,5 @@ app.get("/chirp/:channel/listen", (c) => {
 });
 
 const port = parseInt(process.env.PORT ?? "8787", 10);
-console.log(`Whisper relay on :${port}`);
+console.log(`Chirp relay on :${port}`);
 serve({ fetch: app.fetch, port, hostname: "0.0.0.0" });

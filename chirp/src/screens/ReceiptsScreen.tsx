@@ -33,9 +33,21 @@ function relTime(ts: number): string {
   });
 }
 
+function computeTotals(receipts: Receipt[]): { usdc: number; sol: number } {
+  let usdc = 0;
+  let sol = 0;
+  for (const r of receipts) {
+    const micros = Number(BigInt(r.amountMicros));
+    if (r.token === "USDC") usdc += micros / 1_000_000;
+    else if (r.token === "SOL") sol += micros / 1_000_000_000;
+  }
+  return { usdc, sol };
+}
+
 export function ReceiptsScreen() {
   const { receipts, loading, refresh, clear } = useReceipts();
   const { getExplorerUrl } = useCluster();
+  const totals = computeTotals(receipts);
 
   const onClear = () => {
     haptic.warn();
@@ -84,18 +96,21 @@ export function ReceiptsScreen() {
           </Text>
         </Card>
       ) : (
-        receipts.map((r) => (
-          <ReceiptRow
-            key={r.signature}
-            r={r}
-            onPress={() => {
-              haptic.tap();
-              Linking.openURL(
-                getExplorerUrl(`tx/${r.signature}`),
-              ).catch(() => {});
-            }}
-          />
-        ))
+        <>
+          <TotalsCard usdc={totals.usdc} sol={totals.sol} count={receipts.length} />
+          {receipts.map((r) => (
+            <ReceiptRow
+              key={r.signature}
+              r={r}
+              onPress={() => {
+                haptic.tap();
+                Linking.openURL(
+                  getExplorerUrl(`tx/${r.signature}`),
+                ).catch(() => {});
+              }}
+            />
+          ))}
+        </>
       )}
 
       {receipts.length > 0 && (
@@ -105,6 +120,43 @@ export function ReceiptsScreen() {
         </>
       )}
     </ScrollView>
+  );
+}
+
+function TotalsCard({ usdc, sol, count }: { usdc: number; sol: number; count: number }) {
+  const hasUsdc = usdc > 0;
+  const hasSol = sol > 0;
+  return (
+    <Card>
+      <Text style={styles.totalsLabel}>LIFETIME · ON THIS DEVICE</Text>
+      <View style={styles.totalsRow}>
+        {hasUsdc && (
+          <View style={styles.totalsCell}>
+            <Text style={styles.totalsAmount}>
+              {usdc.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </Text>
+            <Text style={styles.totalsToken}>USDC</Text>
+          </View>
+        )}
+        {hasSol && (
+          <View style={styles.totalsCell}>
+            <Text style={styles.totalsAmount}>
+              {sol.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 4,
+              })}
+            </Text>
+            <Text style={styles.totalsToken}>SOL</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.totalsCaption}>
+        {count} {count === 1 ? "payment" : "payments"} settled on Solana
+      </Text>
+    </Card>
   );
 }
 
@@ -206,10 +258,46 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   amount: {
-    fontSize: 22,
+    fontSize: 26,
     color: COLORS.ink,
     fontFamily: DISPLAY_FONT,
-    letterSpacing: -0.6,
+    letterSpacing: -0.8,
+  },
+  totalsLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.6,
+    color: COLORS.inkMuted,
+    marginBottom: 14,
+  },
+  totalsRow: {
+    flexDirection: "row",
+    gap: 28,
+    flexWrap: "wrap",
+  },
+  totalsCell: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+  },
+  totalsAmount: {
+    fontSize: 42,
+    color: COLORS.ink,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: -1.2,
+    fontVariant: ["tabular-nums"],
+  },
+  totalsToken: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.inkSoft,
+    letterSpacing: 0.6,
+  },
+  totalsCaption: {
+    fontSize: 12,
+    color: COLORS.inkMuted,
+    marginTop: 10,
+    letterSpacing: -0.1,
   },
   time: {
     fontSize: 11,

@@ -19,7 +19,7 @@ import { COLORS } from "./src/theme";
 
 const queryClient = new QueryClient();
 
-// Dark mode app-wide. Whisper's design system is built around a near-black
+// Dark mode app-wide. Chirp's design system is built around a near-black
 // canvas with Duolingo-green accents. We pin Paper + Navigation themes here so
 // nothing fights us on the system color scheme.
 const { DarkTheme } = adaptNavigationTheme({

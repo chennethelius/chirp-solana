@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { PublicKey } from "@solana/web3.js";
@@ -15,6 +14,7 @@ import { PublicKey } from "@solana/web3.js";
 import { COLORS } from "../theme";
 import { BirdLogo } from "../components/ui/BirdLogo";
 import { Card, PopButton } from "../components/ui/PopButton";
+import { AmountKeypad } from "../components/ui/AmountKeypad";
 import { useAuthorization } from "../utils/useAuthorization";
 import { useMobileWallet } from "../utils/useMobileWallet";
 import { useConnection } from "../utils/ConnectionProvider";
@@ -48,6 +48,7 @@ import { recordReceipt } from "../utils/receipts";
 type Token = "USDC" | "SOL";
 
 type IncomingFlow = { kind: "menu"; session: Session };
+type AmountEntryFlow = { kind: "amountEntry"; session: Session };
 type ReviewFlow = {
   kind: "review";
   intent: PaymentIntent;
@@ -63,6 +64,7 @@ type ErrorFlow = { kind: "error"; message: string };
 type Status =
   | { kind: "idle" }
   | IncomingFlow
+  | AmountEntryFlow
   | ReviewFlow
   | ChirpingFlow
   | SigningFlow
@@ -87,9 +89,15 @@ export function CustomerScreen() {
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [micActive, setMicActive] = useState(false);
-  const [enteredAmount, setEnteredAmount] = useState("5.00");
+  const [enteredAmount, setEnteredAmount] = useState("0");
   const [enteredToken, setEnteredToken] = useState<Token>("USDC");
   const [showDebug, setShowDebug] = useState(false);
+  const [decodeProgress, setDecodeProgress] = useState({
+    framesReceived: 0,
+    overall: 0,
+    confirmedPositions: 0,
+    lastUpdate: 0,
+  });
   const [debug, setDebug] = useState({
     peak: 0,
     rms: 0,
@@ -150,6 +158,14 @@ export function CustomerScreen() {
               : { ...d, framesBad: d.framesBad + 1 };
           return d;
         });
+        if (e.type === "progress") {
+          setDecodeProgress({
+            framesReceived: e.progress.framesReceived,
+            overall: e.progress.overall,
+            confirmedPositions: e.progress.confirmedPositions,
+            lastUpdate: Date.now(),
+          });
+        }
       });
     }
 
@@ -165,7 +181,8 @@ export function CustomerScreen() {
         cur === "submitting" ||
         cur === "chirping" ||
         cur === "review" ||
-        cur === "menu"
+        cur === "menu" ||
+        cur === "amountEntry"
       )
         return;
 
@@ -276,10 +293,19 @@ export function CustomerScreen() {
     });
   };
 
-  const customAmount = () => {
-    if (statusRef.current.kind !== "menu") return;
+  const openAmountKeypad = () => {
+    const cur = statusRef.current;
+    if (cur.kind !== "menu") return;
     haptic.press();
-    const session = (statusRef.current as IncomingFlow).session;
+    setEnteredAmount("0");
+    setStatus({ kind: "amountEntry", session: cur.session });
+  };
+
+  const commitAmount = () => {
+    const cur = statusRef.current;
+    if (cur.kind !== "amountEntry") return;
+    haptic.press();
+    const session = cur.session;
     const parsed = parseFloat(enteredAmount);
     if (!parsed || parsed <= 0) {
       haptic.warn();
@@ -302,6 +328,13 @@ export function CustomerScreen() {
       intent,
       sessionCode: session.sessionCode,
     });
+  };
+
+  const backToMenu = () => {
+    const cur = statusRef.current;
+    if (cur.kind !== "amountEntry") return;
+    haptic.tap();
+    setStatus({ kind: "menu", session: cur.session });
   };
 
   const handleConfirm = async () => {
@@ -451,20 +484,34 @@ export function CustomerScreen() {
             Hold your phone close to a Chirp terminal. The menu will appear
             here automatically.
           </Text>
+          <DecodeProgressBar progress={decodeProgress} />
         </Card>
       )}
 
       {status.kind === "menu" && (
         <MenuCard
           session={status.session}
-          enteredAmount={enteredAmount}
-          setEnteredAmount={setEnteredAmount}
-          enteredToken={enteredToken}
-          setEnteredToken={setEnteredToken}
           onPick={pickItem}
-          onCustom={customAmount}
+          onCustom={openAmountKeypad}
           onCancel={cancel}
         />
+      )}
+
+      {status.kind === "amountEntry" && (
+        <Card>
+          <AmountKeypad
+            value={enteredAmount}
+            token={enteredToken}
+            acceptedTokens={status.session.acceptedTokens as Token[]}
+            onChange={setEnteredAmount}
+            onTokenChange={setEnteredToken}
+            onSubmit={commitAmount}
+            onCancel={backToMenu}
+            title={`Paying ${status.session.merchantName ?? "merchant"}`}
+            subtitle={`Code ${status.session.sessionCode} · verify on terminal`}
+            submitLabel="Review payment  →"
+          />
+        </Card>
       )}
 
       {status.kind === "review" && (
@@ -492,7 +539,7 @@ export function CustomerScreen() {
             {status.kind === "chirping"
               ? "Hold your phone toward the register."
               : status.kind === "signing"
-              ? "Approve the transaction in Phantom."
+              ? "Approve the transaction in your wallet."
               : "Confirming on devnet — usually under a second."}
           </Text>
         </Card>
@@ -521,6 +568,70 @@ export function CustomerScreen() {
     </ScrollView>
   );
 }
+
+function DecodeProgressBar({
+  progress,
+}: {
+  progress: {
+    framesReceived: number;
+    overall: number;
+    confirmedPositions: number;
+    lastUpdate: number;
+  };
+}) {
+  // Auto-fade the bar when no frames have arrived in a while.
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    if (progress.framesReceived === 0) {
+      setStale(true);
+      return;
+    }
+    setStale(false);
+    const t = setTimeout(() => setStale(true), 2_500);
+    return () => clearTimeout(t);
+  }, [progress.lastUpdate, progress.framesReceived]);
+
+  if (progress.framesReceived === 0 || stale) return null;
+
+  const pct = Math.round(progress.overall * 100);
+  return (
+    <View style={progressStyles.row}>
+      <View style={progressStyles.track}>
+        <View
+          style={[progressStyles.fill, { width: `${pct}%` }]}
+        />
+      </View>
+      <Text style={progressStyles.label}>
+        {progress.confirmedPositions}/11 bytes locked
+        {" · "}
+        {progress.framesReceived} chirp{progress.framesReceived === 1 ? "" : "s"} heard
+      </Text>
+    </View>
+  );
+}
+
+const progressStyles = StyleSheet.create({
+  row: {
+    marginTop: 14,
+    gap: 6,
+  },
+  track: {
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  fill: {
+    height: "100%",
+    backgroundColor: COLORS.accent,
+    borderRadius: 2,
+  },
+  label: {
+    fontSize: 11,
+    color: COLORS.inkMuted,
+    fontVariant: ["tabular-nums"],
+  },
+});
 
 function DebugPanel({
   debug,
@@ -677,24 +788,17 @@ function ListeningHeader({
 
 function MenuCard({
   session,
-  enteredAmount,
-  setEnteredAmount,
-  enteredToken,
-  setEnteredToken,
   onPick,
   onCustom,
   onCancel,
 }: {
   session: Session;
-  enteredAmount: string;
-  setEnteredAmount: (v: string) => void;
-  enteredToken: Token;
-  setEnteredToken: (t: Token) => void;
   onPick: (item: MenuItem) => void;
   onCustom: () => void;
   onCancel: () => void;
 }) {
   const items = session.menuItems ?? [];
+  const hasItems = items.length > 0;
   return (
     <Card>
       <Text style={styles.codeLabel}>VERIFY · MATCHES THE TERMINAL</Text>
@@ -709,7 +813,7 @@ function MenuCard({
         {session.merchantPubkey.slice(-6)}
       </Text>
 
-      {items.length > 0 && (
+      {hasItems && (
         <>
           <Text style={[styles.sectionLabel, { marginTop: 22 }]}>
             TAP AN ITEM TO PAY
@@ -742,47 +846,12 @@ function MenuCard({
         </>
       )}
 
-      <Text style={[styles.sectionLabel, { marginTop: 22 }]}>
-        OR TIP / CUSTOM AMOUNT
-      </Text>
-      <View style={styles.tokenRow}>
-        {(session.acceptedTokens as Token[]).map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => {
-              haptic.tap();
-              setEnteredToken(t);
-            }}
-            style={[
-              styles.tokenChip,
-              enteredToken === t && styles.tokenChipActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.tokenChipText,
-                enteredToken === t && styles.tokenChipTextActive,
-              ]}
-            >
-              {t}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.amountRow}>
-        <TextInput
-          value={enteredAmount}
-          onChangeText={setEnteredAmount}
-          keyboardType="decimal-pad"
-          style={styles.amountInput}
-          selectionColor={COLORS.accent}
-          placeholderTextColor={COLORS.inkMuted}
-        />
-        <Text style={styles.amountToken}>{enteredToken}</Text>
-      </View>
-
-      <View style={{ height: 14 }} />
-      <PopButton label="Pay custom amount" onPress={onCustom} />
+      <View style={{ height: hasItems ? 18 : 8 }} />
+      <PopButton
+        label={hasItems ? "Other amount" : "Enter amount"}
+        variant={hasItems ? "secondary" : "primary"}
+        onPress={onCustom}
+      />
       <View style={{ height: 8 }} />
       <PopButton label="Cancel" variant="ghost" onPress={onCancel} />
     </Card>
@@ -1028,57 +1097,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.ink,
     letterSpacing: -0.1,
-  },
-  tokenRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  tokenChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: COLORS.paperDeep,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-  },
-  tokenChipActive: {
-    backgroundColor: COLORS.ink,
-    borderColor: COLORS.ink,
-  },
-  tokenChipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: COLORS.inkSoft,
-    letterSpacing: 0.5,
-  },
-  tokenChipTextActive: {
-    color: "#0A0A0E",
-  },
-  amountRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: COLORS.paperDeep,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-  },
-  amountInput: {
-    flex: 1,
-    fontSize: 36,
-    fontWeight: "300",
-    color: COLORS.ink,
-    paddingVertical: 0,
-    letterSpacing: -1.5,
-  },
-  amountToken: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: COLORS.inkMuted,
-    letterSpacing: 0.6,
   },
   bigAmount: {
     fontSize: 64,

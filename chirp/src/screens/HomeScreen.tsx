@@ -64,11 +64,18 @@ export function HomeScreen() {
         <Card>
           <Text style={styles.cardTitle}>Welcome.</Text>
           <Text style={styles.cardBody}>
-            Connect a wallet to send and receive payments by sound.
+            Chirp lets you pay anyone in earshot — no NFC, no QR codes, no
+            pairing. Just sound.
           </Text>
-          <View style={{ height: 22 }} />
+
+          <View style={styles.stepsBlock}>
+            <Step n={1} title="Find a terminal" body="Walk up to any Chirp register. It's already broadcasting." />
+            <Step n={2} title="Your phone hears it" body="Open the Pay tab and the menu appears automatically." />
+            <Step n={3} title="Sign and done" body="Approve in your wallet. Settles on Solana in under a second." />
+          </View>
+
           <PopButton
-            label={busy ? "Opening Phantom…" : "Connect Phantom"}
+            label={busy ? "Opening wallet…" : "Connect wallet to get started"}
             onPress={handleConnect}
             disabled={busy}
           />
@@ -102,6 +109,20 @@ export function HomeScreen() {
       <View style={{ height: 32 }} />
       <Text style={styles.footer}>Chirp · pay by sound</Text>
     </ScrollView>
+  );
+}
+
+function Step({ n, title, body }: { n: number; title: string; body: string }) {
+  return (
+    <View style={styles.step}>
+      <View style={styles.stepBullet}>
+        <Text style={styles.stepBulletText}>{n}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.stepTitle}>{title}</Text>
+        <Text style={styles.stepBody}>{body}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -191,6 +212,46 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
     fontFamily: "Courier",
     letterSpacing: 0.4,
+  },
+  stepsBlock: {
+    marginTop: 24,
+    marginBottom: 24,
+    gap: 18,
+  },
+  step: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+  },
+  stepBullet: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.paperDeep,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.borderSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  stepBulletText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: COLORS.accent,
+    letterSpacing: -0.2,
+  },
+  stepTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: COLORS.ink,
+    letterSpacing: -0.2,
+  },
+  stepBody: {
+    fontSize: 13,
+    color: COLORS.inkSoft,
+    marginTop: 3,
+    lineHeight: 18,
+    letterSpacing: -0.05,
   },
   footer: {
     fontSize: 11,

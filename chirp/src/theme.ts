@@ -1,4 +1,4 @@
-// Whisper — refined Apple-Wallet-inspired dark palette.
+// Chirp — refined Apple-Wallet-inspired dark palette.
 //
 // The whole interface is graphite + bone-white. There is exactly one
 // accent — a warm amber that signals motion + money. The discipline is
