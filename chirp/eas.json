@@ -17,7 +17,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_CHIRP_RELAY_URL": "https://YOUR-NGROK-OR-DEPLOY-URL.example",
+        "EXPO_PUBLIC_CHIRP_RELAY_URL": "https://abdominal-swoop-gala.ngrok-free.dev",
         "EXPO_PUBLIC_CHIRP_MODE": "audio",
         "EXPO_PUBLIC_CHIRP_CHANNEL": "demo"
       }
