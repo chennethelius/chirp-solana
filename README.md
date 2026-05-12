@@ -111,6 +111,22 @@ The cashier flow at [terminal-web/app/page.tsx](terminal-web/app/page.tsx) is th
 
 ---
 
+## Try the demo (judges / quick path)
+
+If you just want to run Chirp end-to-end without modifying code:
+
+1. **Get the customer APK.** Either download from this repo's [Releases](../../releases) (when a prebuilt APK is attached), or build one yourself: `cd chirp && eas build --profile preview --platform android` (~15 min, free EAS tier). Before building, set `EXPO_PUBLIC_CHIRP_RELAY_URL` in [chirp/eas.json](chirp/eas.json) to an `ngrok`/Fly/Render URL pointing at your relay — plain LAN IPs over HTTP won't work on Android.
+2. **Install the APK.** `adb install -r chirp.apk` (or tap the EAS URL on the phone's browser and install directly). Enable USB debugging in Android Developer Options if `adb` doesn't see the device.
+3. **Install Phantom** on the phone from the Play Store. Switch to devnet inside the app. Airdrop devnet SOL via [faucet.solana.com](https://faucet.solana.com).
+4. **Run the relay + terminal** locally on a laptop (steps 1 + 2 below).
+5. **Open the Chirp app.** Hold the phone near your laptop speakers, hit Broadcast in the terminal, pay from the phone.
+
+The preview APK bakes the JS bundle into the binary — no Metro, no live laptop dependency for the mobile side.
+
+For the full developer setup including hot-reload, see [instructions.md](instructions.md).
+
+---
+
 ## Setup
 
 **Prereqs:** Node 20+, an Android device (Solana Mobile Seeker recommended) on the same wifi as your laptop, `adb`, and the [EAS CLI](https://docs.expo.dev/eas/) (`npm i -g eas-cli`) if you need to build the dev client.

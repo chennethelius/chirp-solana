@@ -111,28 +111,52 @@ Open `http://localhost:3000` in Chrome. You'll see the Chirp onboarding screen �
 
 ---
 
-## 5. Build the Android dev client (one time)
+## 5. Build the Android APK
 
-The mobile app uses `react-native-audio-api`, a native module — so it can't run in plain Expo Go. You need a custom dev client APK built once via EAS.
+The mobile app uses `react-native-audio-api` + Mobile Wallet Adapter, both native modules — so it can't run in plain Expo Go. You build an APK once via EAS, then sideload it.
+
+There are two profiles. Pick based on what you're doing:
+
+### 5a. Standalone preview APK — **recommended for judges and demos**
+
+JS bundle is baked into the APK. No Metro, no laptop dependency at runtime — install and run.
+
+First, point the APK at a reachable relay. Open [chirp/eas.json](chirp/eas.json) and set `EXPO_PUBLIC_CHIRP_RELAY_URL` under `build.preview.env` to either:
+
+- An ngrok URL (`ngrok http 8787` from your laptop), or
+- A deployed relay URL (Fly, Render, etc.)
+
+A plain LAN IP (`http://192.168.x.x:8787`) won't work — Android blocks cleartext HTTP unless the manifest allows it, and ngrok/Fly give you free HTTPS.
+
+Then build:
 
 ```bash
 cd chirp
-eas login          # Expo account
-eas build --profile development --platform android
+eas login          # one-time, Expo account
+eas build --profile preview --platform android
 ```
 
-EAS prompts about credentials on first run — let it generate them. The build runs in the cloud and takes ~10–15 minutes. When it finishes, EAS prints a download URL.
-
-Install on your device:
+The cloud build takes ~15 min (free tier; queue + build). EAS prints a download URL. Install on your device:
 
 ```bash
-# Either download the APK from the URL on the phone via Chrome and tap to
-# install, or:
-curl -L -o chirp-dev.apk "URL_FROM_EAS_OUTPUT"
+curl -L -o chirp.apk "URL_FROM_EAS_OUTPUT"
+adb install -r chirp.apk
+# or tap the EAS URL on the phone's browser and install directly
+```
+
+Open the Chirp app on the phone. It uses the baked-in relay URL — no Metro needed. Skip Section 6 and 7.
+
+### 5b. Dev client APK — for iterating on the mobile code
+
+If you're going to modify mobile code and want live reload:
+
+```bash
+cd chirp
+eas build --profile development --platform android
 adb install -r chirp-dev.apk
 ```
 
-You only do this once. Subsequent code changes hot-reload via Metro — no rebuild needed.
+This APK needs Metro running on your laptop (Section 6) to fetch the JS bundle. Subsequent code changes hot-reload — no rebuild needed.
 
 ---
 
