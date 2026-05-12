@@ -1,4 +1,4 @@
-// Whisper terminal — graphite + bone-white with a single amber accent.
+// Chirp terminal — graphite + bone-white with a single amber accent.
 // Mirrors the mobile palette so the cashier display and customer phone
 // feel like a matched pair.
 export const COLORS = {

@@ -4,11 +4,16 @@ import { useRouter } from "next/navigation";
 import { CONFIG } from "@/lib/config";
 import { MenuItem, Order, RelayClient, Session } from "@/lib/relay";
 import { newRequestId } from "@/lib/chirp";
-import { emitChirp, chime } from "@/lib/audioEmitter";
+import { emitChirp, emitChirpData, chime } from "@/lib/audioEmitter";
 import { startListening, ListenerStats } from "@/lib/audioListener";
 import { BirdLogo } from "@/components/BirdLogo";
 import { BalanceHero } from "@/components/BalancePanel";
-import { loadMerchantConfig, MerchantConfig } from "@/lib/wallet";
+import {
+  clearManagedWallet,
+  loadMerchantConfig,
+  MerchantConfig,
+} from "@/lib/wallet";
+import { formatUsd, useSolUsd } from "@/lib/usd";
 
 const SESSION_CHIRP_INTERVAL_MS = 5000;
 const SESSION_REFRESH_INTERVAL_MS = 30_000;
@@ -39,10 +44,27 @@ function rand4(): string {
   return (buf[0] % 10000).toString().padStart(4, "0");
 }
 
-function microsToDisplay(micros: string, token: Token): string {
+function microsToNumber(micros: string, token: Token): number {
   const n = Number(BigInt(micros));
   const div = token === "USDC" ? 1_000_000 : 1_000_000_000;
-  return (n / div).toFixed(2);
+  return n / div;
+}
+
+function microsToDisplay(micros: string, token: Token): string {
+  return microsToNumber(micros, token).toFixed(token === "USDC" ? 2 : 4);
+}
+
+// USDC is dollar-pegged; SOL uses the live oracle. Returns null if we don't
+// have a SOL price yet (the hook seeds from cache so this is rare).
+function microsToUsd(
+  micros: string,
+  token: Token,
+  solUsd: number,
+): number | null {
+  const amt = microsToNumber(micros, token);
+  if (token === "USDC") return amt;
+  if (!solUsd) return null;
+  return amt * solUsd;
 }
 
 function loadMenu(): MenuItem[] {
@@ -64,6 +86,7 @@ function saveMenu(items: MenuItem[]) {
 
 export default function TerminalPage() {
   const router = useRouter();
+  const solUsd = useSolUsd();
   const [merchant, setMerchant] = useState<MerchantConfig | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>(DEFAULT_MENU);
   const [active, setActive] = useState<{
@@ -85,6 +108,7 @@ export default function TerminalPage() {
   const [micError, setMicError] = useState<string | null>(null);
 
   const chirpTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const broadcastingRef = useRef<boolean>(false);
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopListenRef = useRef<(() => void) | null>(null);
@@ -104,6 +128,7 @@ export default function TerminalPage() {
 
   useEffect(
     () => () => {
+      broadcastingRef.current = false;
       chirpTimer.current && clearInterval(chirpTimer.current);
       refreshTimer.current && clearInterval(refreshTimer.current);
       pollTimer.current && clearInterval(pollTimer.current);
@@ -150,14 +175,25 @@ export default function TerminalPage() {
         createdAt: Date.now(),
       });
 
-      const emit = async () => {
+      // First chirp gets the audible bird trill (broadcast-start cue).
+      // After that we go silent-ultrasonic, back-to-back, no audible loop.
+      broadcastingRef.current = true;
+      const loop = async () => {
         try {
           await emitChirp({ requestId: sessionId });
           setChirpPulse((n) => n + 1);
         } catch {}
+        while (broadcastingRef.current) {
+          try {
+            await emitChirpData({ requestId: sessionId });
+            setChirpPulse((n) => n + 1);
+          } catch {
+            // back off briefly on error so we don't busy-loop a broken ctx
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        }
       };
-      emit();
-      chirpTimer.current = setInterval(emit, SESSION_CHIRP_INTERVAL_MS);
+      loop();
       refreshTimer.current = setInterval(
         () => relay.refreshSession(sessionId).catch(() => {}),
         SESSION_REFRESH_INTERVAL_MS,
@@ -226,6 +262,7 @@ export default function TerminalPage() {
 
   const closeBroadcast = async () => {
     if (!active) return;
+    broadcastingRef.current = false;
     chirpTimer.current && clearInterval(chirpTimer.current);
     refreshTimer.current && clearInterval(refreshTimer.current);
     pollTimer.current && clearInterval(pollTimer.current);
@@ -273,10 +310,32 @@ export default function TerminalPage() {
             {showDebug ? "Hide" : "Show"} diagnostics
           </button>
           <button
-            onClick={() => router.push("/")}
-            className="text-xs text-[var(--color-ink-soft)] font-semibold underline"
+            onClick={() => router.push("/wallet")}
+            className="text-xs font-extrabold"
+            style={{
+              background: "var(--color-paper-deep)",
+              color: "var(--color-ink)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "999px",
+              padding: "6px 12px",
+            }}
           >
-            Switch wallet
+            Wallet →
+          </button>
+          <button
+            onClick={() => {
+              if (
+                confirm(
+                  "Sign out? This clears the wallet keys from this device. Save your backup first if you have funds.",
+                )
+              ) {
+                clearManagedWallet();
+                router.replace("/");
+              }
+            }}
+            className="text-xs text-[var(--color-ink-soft)] hover:text-[var(--color-red)] font-semibold underline"
+          >
+            Sign out
           </button>
         </div>
       </header>
@@ -293,6 +352,7 @@ export default function TerminalPage() {
           menu={menu}
           chirpPulse={chirpPulse}
           receipt={receipt}
+          solUsd={solUsd}
           onClose={closeBroadcast}
         />
       ) : (
@@ -300,6 +360,7 @@ export default function TerminalPage() {
           menu={menu}
           setMenu={updateMenu}
           busy={busy}
+          solUsd={solUsd}
           onBroadcast={broadcastMenu}
         />
       )}
@@ -313,6 +374,7 @@ export default function TerminalPage() {
       {incomingOrder && (
         <OrderToast
           order={incomingOrder}
+          solUsd={solUsd}
           onDismiss={() => setIncomingOrder(null)}
         />
       )}
@@ -322,6 +384,7 @@ export default function TerminalPage() {
           amount={paidConfirm.amount}
           token={paidConfirm.token}
           payer={paidConfirm.payer}
+          solUsd={solUsd}
           onDone={() => setPaidConfirm(null)}
         />
       )}
@@ -331,19 +394,20 @@ export default function TerminalPage() {
 
 function OrderToast({
   order,
+  solUsd,
   onDismiss,
 }: {
   order: Order;
+  solUsd: number;
   onDismiss: () => void;
 }) {
   useEffect(() => {
     const t = setTimeout(onDismiss, 7000);
     return () => clearTimeout(t);
   }, [onDismiss]);
-  const div = order.token === "USDC" ? 1_000_000 : 1_000_000_000;
-  const amt = (Number(BigInt(order.amountMicros)) / div).toFixed(
-    order.token === "USDC" ? 2 : 4,
-  );
+  const token = order.token as Token;
+  const cryptoAmt = microsToNumber(order.amountMicros, token);
+  const usd = microsToUsd(order.amountMicros, token, solUsd);
   return (
     <div className="fixed bottom-6 right-6 z-30 max-w-sm pop-in">
       <div className="card-glass-tint p-5">
@@ -353,11 +417,11 @@ function OrderToast({
         <div className="mt-2 flex items-baseline gap-3">
           <div className="text-2xl">{order.itemEmoji ?? "🧾"}</div>
           <div className="font-display text-3xl text-[var(--color-ink)] leading-none">
-            {amt}
-            <span className="ml-2 text-base text-[var(--color-ink-soft)]">
-              {order.token}
-            </span>
+            {usd === null ? "—" : formatUsd(usd)}
           </div>
+        </div>
+        <div className="text-xs text-[var(--color-ink-soft)] font-semibold mt-1.5">
+          {cryptoAmt.toFixed(token === "USDC" ? 2 : 4)} {token}
         </div>
         {order.itemName && (
           <div className="text-sm text-[var(--color-ink-soft)] mt-2">
@@ -376,17 +440,20 @@ function PaidOverlay({
   amount,
   token,
   payer,
+  solUsd,
   onDone,
 }: {
   amount: number;
   token: Token;
   payer?: string;
+  solUsd: number;
   onDone: () => void;
 }) {
   useEffect(() => {
     const t = setTimeout(onDone, 4500);
     return () => clearTimeout(t);
   }, [onDone]);
+  const usd = token === "USDC" ? amount : solUsd > 0 ? amount * solUsd : null;
   return (
     <div
       onClick={onDone}
@@ -414,11 +481,14 @@ function PaidOverlay({
           paid
         </div>
         <div className="font-display text-7xl text-[var(--color-ink)] mt-3 leading-none">
+          {usd === null ? "—" : formatUsd(usd)}
+        </div>
+        <div className="text-base text-[var(--color-ink-soft)] mt-3 font-semibold">
           {amount.toLocaleString(undefined, {
             minimumFractionDigits: token === "USDC" ? 2 : 4,
             maximumFractionDigits: token === "USDC" ? 2 : 4,
           })}{" "}
-          <span className="text-[var(--color-ink-soft)]">{token}</span>
+          {token}
         </div>
         {payer && (
           <div className="font-mono text-xs text-[var(--color-ink-muted)] mt-6">
@@ -434,38 +504,61 @@ function MenuBuilder({
   menu,
   setMenu,
   busy,
+  solUsd,
   onBroadcast,
 }: {
   menu: MenuItem[];
   setMenu: (m: MenuItem[]) => void;
   busy: boolean;
+  solUsd: number;
   onBroadcast: () => void;
 }) {
   const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
+  const [usdPrice, setUsdPrice] = useState("");
   const [token, setToken] = useState<Token>("USDC");
   const [emoji, setEmoji] = useState("");
 
+  // Sellers price in dollars; we convert to whichever crypto they accept.
+  // For SOL, the SOL amount is locked in at the current oracle price when
+  // the item is added. Fine for a demo session; revisit if menus need to
+  // float live.
   const addItem = () => {
-    const parsed = parseFloat(price);
-    if (!name.trim() || !parsed || parsed <= 0) return;
-    const div = token === "USDC" ? 1_000_000 : 1_000_000_000;
+    const usd = parseFloat(usdPrice);
+    if (!name.trim() || !usd || usd <= 0) return;
+    let priceMicros: string;
+    if (token === "USDC") {
+      priceMicros = BigInt(Math.round(usd * 1_000_000)).toString();
+    } else {
+      if (solUsd <= 0) return;
+      const sol = usd / solUsd;
+      priceMicros = BigInt(Math.round(sol * 1_000_000_000)).toString();
+    }
     const next: MenuItem = {
       id: name.trim().toLowerCase().replace(/\s+/g, "-") + "-" + Date.now(),
       name: name.trim(),
-      priceMicros: BigInt(Math.round(parsed * div)).toString(),
+      priceMicros,
       token,
       emoji: emoji.trim() || undefined,
     };
     setMenu([...menu, next]);
     setName("");
-    setPrice("");
+    setUsdPrice("");
     setEmoji("");
   };
 
   const removeItem = (id: string) => {
     setMenu(menu.filter((m) => m.id !== id));
   };
+
+  const previewUsd = parseFloat(usdPrice);
+  const previewCrypto =
+    Number.isFinite(previewUsd) && previewUsd > 0
+      ? token === "USDC"
+        ? `${previewUsd.toFixed(2)} USDC`
+        : solUsd > 0
+        ? `${(previewUsd / solUsd).toFixed(4)} SOL`
+        : "—"
+      : null;
 
   return (
     <div className="card-ios p-6">
@@ -474,7 +567,7 @@ function MenuBuilder({
         <span className="chip">{menu.length} items</span>
       </div>
       <p className="text-sm text-[var(--color-ink-soft)] mb-5">
-        Customers in earshot will see this menu, pick what they want, and pay.
+        Price in dollars — customers pay in crypto, you see USD here.
       </p>
 
       <ul className="space-y-2 mb-5">
@@ -483,26 +576,33 @@ function MenuBuilder({
             No items yet. Add one below to start broadcasting.
           </li>
         )}
-        {menu.map((m) => (
-          <li
-            key={m.id}
-            className="flex items-center gap-3 p-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-paper-deep)]"
-          >
-            <span className="text-2xl w-8 text-center">{m.emoji ?? "🧾"}</span>
-            <div className="flex-1 min-w-0">
-              <div className="font-extrabold truncate">{m.name}</div>
-              <div className="text-xs text-[var(--color-ink-soft)] font-semibold">
-                {microsToDisplay(m.priceMicros, m.token)} {m.token}
-              </div>
-            </div>
-            <button
-              onClick={() => removeItem(m.id)}
-              className="text-[var(--color-red)] text-xs font-bold px-3 py-1 rounded-full hover:bg-[var(--color-paper-high)]"
+        {menu.map((m) => {
+          const usd = microsToUsd(m.priceMicros, m.token, solUsd);
+          return (
+            <li
+              key={m.id}
+              className="flex items-center gap-3 p-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-paper-deep)]"
             >
-              Remove
-            </button>
-          </li>
-        ))}
+              <span className="text-2xl w-8 text-center">{m.emoji ?? "🧾"}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-extrabold truncate">{m.name}</div>
+                <div className="text-xs text-[var(--color-ink-soft)] font-semibold">
+                  <span className="text-[var(--color-ink)]">
+                    {usd === null ? "—" : formatUsd(usd)}
+                  </span>
+                  <span className="mx-1.5 text-[var(--color-ink-muted)]">·</span>
+                  {microsToDisplay(m.priceMicros, m.token)} {m.token}
+                </div>
+              </div>
+              <button
+                onClick={() => removeItem(m.id)}
+                className="text-[var(--color-red)] text-xs font-bold px-3 py-1 rounded-full hover:bg-[var(--color-paper-high)]"
+              >
+                Remove
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       <div className="border-t border-[var(--color-border)] pt-4">
@@ -521,17 +621,22 @@ function MenuBuilder({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Item name"
-            className="col-span-6 bg-[var(--color-paper-deep)] border border-[var(--color-border)] text-[var(--color-ink)] rounded-2xl px-3 py-3 font-semibold focus:outline-none focus:border-[var(--color-accent)]"
+            className="col-span-5 bg-[var(--color-paper-deep)] border border-[var(--color-border)] text-[var(--color-ink)] rounded-2xl px-3 py-3 font-semibold focus:outline-none focus:border-[var(--color-accent)]"
           />
-          <input
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            placeholder="3.50"
-            type="number"
-            step="0.01"
-            min="0"
-            className="col-span-2 bg-[var(--color-paper-deep)] border border-[var(--color-border)] text-[var(--color-ink)] rounded-2xl px-3 py-3 font-semibold focus:outline-none focus:border-[var(--color-accent)]"
-          />
+          <div className="col-span-3 relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-soft)] font-bold pointer-events-none">
+              $
+            </span>
+            <input
+              value={usdPrice}
+              onChange={(e) => setUsdPrice(e.target.value)}
+              placeholder="3.50"
+              type="number"
+              step="0.01"
+              min="0"
+              className="w-full bg-[var(--color-paper-deep)] border border-[var(--color-border)] text-[var(--color-ink)] rounded-2xl pl-7 pr-3 py-3 font-semibold focus:outline-none focus:border-[var(--color-accent)]"
+            />
+          </div>
           <select
             value={token}
             onChange={(e) => setToken(e.target.value as Token)}
@@ -541,6 +646,11 @@ function MenuBuilder({
             <option>SOL</option>
           </select>
         </div>
+        {previewCrypto && (
+          <div className="text-[11px] text-[var(--color-ink-soft)] font-semibold mt-2 ml-1">
+            Customer pays ≈ {previewCrypto}
+          </div>
+        )}
         <button
           onClick={addItem}
           className="btn-pop mt-3 px-5 py-2.5 text-sm bg-[var(--color-paper-deep)] border border-[var(--color-border)] text-[var(--color-ink)] text-[var(--color-ink)]"
@@ -574,6 +684,7 @@ function BroadcastingCard({
   menu,
   chirpPulse,
   receipt,
+  solUsd,
   onClose,
 }: {
   code: string;
@@ -582,8 +693,13 @@ function BroadcastingCard({
   menu: MenuItem[];
   chirpPulse: number;
   receipt: Receipt | null;
+  solUsd: number;
   onClose: () => void;
 }) {
+  const usdTotal = receipt
+    ? (receipt.totalsByToken.USDC ?? 0) +
+      (solUsd > 0 ? (receipt.totalsByToken.SOL ?? 0) * solUsd : 0)
+    : 0;
   return (
     <div className="space-y-4">
       <div
@@ -646,20 +762,27 @@ function BroadcastingCard({
           <span className="chip">{menu.length} items chirping</span>
         </div>
         <ul className="grid grid-cols-2 gap-2">
-          {menu.map((m) => (
-            <li
-              key={m.id}
-              className="p-3 rounded-2xl bg-[var(--color-paper-deep)] flex items-center gap-2 border border-[var(--color-border)]"
-            >
-              <span className="text-xl">{m.emoji ?? "🧾"}</span>
-              <div className="flex-1 min-w-0">
-                <div className="font-extrabold text-sm truncate">{m.name}</div>
-                <div className="text-[11px] text-[var(--color-ink-soft)] font-semibold">
-                  {microsToDisplay(m.priceMicros, m.token)} {m.token}
+          {menu.map((m) => {
+            const usd = microsToUsd(m.priceMicros, m.token, solUsd);
+            return (
+              <li
+                key={m.id}
+                className="p-3 rounded-2xl bg-[var(--color-paper-deep)] flex items-center gap-2 border border-[var(--color-border)]"
+              >
+                <span className="text-xl">{m.emoji ?? "🧾"}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-extrabold text-sm truncate">{m.name}</div>
+                  <div className="text-[11px] text-[var(--color-ink-soft)] font-semibold">
+                    <span className="text-[var(--color-ink)]">
+                      {usd === null ? "—" : formatUsd(usd)}
+                    </span>
+                    <span className="mx-1 text-[var(--color-ink-muted)]">·</span>
+                    {microsToDisplay(m.priceMicros, m.token)} {m.token}
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </div>
 
@@ -673,15 +796,23 @@ function BroadcastingCard({
               No payments yet. Hold a phone near the speaker.
             </div>
           ) : (
-            <div className="space-y-1">
-              <div className="font-display text-5xl text-[var(--color-ink)] leading-none">
-                {receipt.paymentCount}
-                <span className="text-[var(--color-accent)] italic ml-3">paid</span>
+            <div className="space-y-2">
+              <div className="flex items-baseline gap-3">
+                <div className="font-display text-5xl text-[var(--color-ink)] leading-none">
+                  {formatUsd(usdTotal)}
+                </div>
+                <div className="text-[var(--color-accent)] italic font-display text-2xl">
+                  collected
+                </div>
               </div>
-              <div className="text-sm font-semibold">
-                {Object.entries(receipt.totalsByToken).map(([t, v]) => (
-                  <span key={t} className="mr-3">
-                    {(v as number).toFixed(2)} {t}
+              <div className="text-xs font-semibold text-[var(--color-ink-soft)]">
+                {receipt.paymentCount} payment
+                {receipt.paymentCount === 1 ? "" : "s"}
+                {" · "}
+                {Object.entries(receipt.totalsByToken).map(([t, v], i, arr) => (
+                  <span key={t}>
+                    {(v as number).toFixed(t === "SOL" ? 4 : 2)} {t}
+                    {i < arr.length - 1 ? " + " : ""}
                   </span>
                 ))}
               </div>

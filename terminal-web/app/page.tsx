@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BirdLogo } from "@/components/BirdLogo";
 import {
+  clearManagedWallet,
   generateManagedWallet,
   isLikelySolanaPubkey,
   loadMerchantConfig,
   loadMerchantSecret,
   saveMerchantConfig,
+  WalletStorageError,
 } from "@/lib/wallet";
 
 type Mode = "choice" | "create" | "paste" | "review";
@@ -35,10 +37,18 @@ export default function Home() {
   const goCreate = () => {
     setError(null);
     setRevealSecret(false);
-    const { pubkey: pk, secretBase58 } = generateManagedWallet();
-    setPubkey(pk);
-    setSecret(secretBase58);
-    setMode("create");
+    try {
+      const { pubkey: pk, secretBase58 } = generateManagedWallet();
+      setPubkey(pk);
+      setSecret(secretBase58);
+      setMode("create");
+    } catch (e) {
+      if (e instanceof WalletStorageError) {
+        setError(e.message);
+      } else {
+        setError("Couldn't create a wallet on this device. Try a different browser.");
+      }
+    }
   };
 
   const goPaste = () => {
@@ -83,10 +93,31 @@ export default function Home() {
           <p className="text-[var(--color-ink-soft)] mt-3 text-sm">
             Get paid by sound.
           </p>
+          {mode === "choice" && (
+            <p className="text-[var(--color-ink-muted)] mt-4 text-xs leading-relaxed max-w-xs">
+              No card reader, no app install for customers. Set up takes 20
+              seconds — even if you've never touched crypto.
+            </p>
+          )}
         </header>
 
         {mode === "choice" && (
-          <ChoiceCard onCreate={goCreate} onPaste={goPaste} />
+          <>
+            <ChoiceCard onCreate={goCreate} onPaste={goPaste} />
+            {error && (
+              <div
+                className="mt-4 rounded-2xl p-4 border"
+                style={{
+                  background: "rgba(255, 90, 90, 0.08)",
+                  borderColor: "rgba(255, 90, 90, 0.4)",
+                }}
+              >
+                <p className="text-sm font-semibold text-[var(--color-ink)]">
+                  {error}
+                </p>
+              </div>
+            )}
+          </>
         )}
 
         {mode === "create" && (
@@ -122,6 +153,19 @@ export default function Home() {
             managed={Boolean(secret)}
             onEnter={() => router.push("/terminal")}
             onSwitch={() => setMode("choice")}
+            onSignOut={() => {
+              if (
+                confirm(
+                  "Sign out and forget this wallet on this device? Save your backup first if it has funds — there's no recovery.",
+                )
+              ) {
+                clearManagedWallet();
+                setName("");
+                setPubkey("");
+                setSecret(null);
+                setMode("choice");
+              }
+            }}
           />
         )}
       </div>
@@ -151,11 +195,11 @@ function ChoiceCard({
         <span className="text-2xl">🐣</span>
         <span className="block">
           <span className="block text-lg font-extrabold">
-            Create a new business wallet
+            Set up in one tap
           </span>
           <span className="block text-sm font-medium opacity-90 mt-0.5">
-            Generate a Solana wallet right here. We'll save the keys on this
-            device.
+            Recommended for first-timers. We'll make a wallet for you. No
+            sign-ups, no card reader.
           </span>
         </span>
       </button>
@@ -168,18 +212,23 @@ function ChoiceCard({
         <span className="text-2xl">🔑</span>
         <span className="block">
           <span className="block text-lg font-extrabold">
-            Use my existing wallet
+            I already have a Solana wallet
           </span>
           <span className="block text-sm font-medium text-[var(--color-ink-soft)] mt-0.5">
-            Paste your Solana address. Funds go straight to you.
+            Paste your address. Payments arrive directly — no middlemen.
           </span>
         </span>
       </button>
 
-      <p className="text-xs text-[var(--color-ink-soft)] text-center mt-6 leading-relaxed px-2">
-        Chirp never holds funds. Customers send Solana payments directly to
-        your wallet — devnet for the demo.
-      </p>
+      <div className="mt-6 px-2 space-y-2">
+        <p className="text-xs text-[var(--color-ink-soft)] text-center leading-relaxed">
+          Chirp never holds your money. Customers pay you directly in dollars
+          (USDC) or SOL — you see the dollar amount on every screen.
+        </p>
+        <p className="text-[10px] text-[var(--color-ink-muted)] text-center font-semibold tracking-wider uppercase">
+          Devnet · demo mode · no real money moves
+        </p>
+      </div>
     </div>
   );
 }
@@ -218,30 +267,34 @@ function CreateCard({
 
       <div className="border-t border-[var(--color-border)] -mx-6 my-2" />
 
-      <Step n={2} label="Your fresh wallet" />
+      <Step n={2} label="Your wallet is ready" />
       <div className="bg-[var(--color-paper-deep)] rounded-2xl p-4 border-2 border-[var(--color-border)]">
         <div className="text-xs font-bold text-[var(--color-ink-soft)] uppercase tracking-wider">
-          Public address
+          Receiving address
         </div>
         <div className="font-mono text-sm break-all mt-1">{pubkey}</div>
+        <p className="text-[11px] text-[var(--color-ink-muted)] mt-2 leading-relaxed">
+          Think of this like your IBAN. Customers send to it — you receive
+          dollars (USDC) or SOL.
+        </p>
       </div>
 
       <div
         className="border rounded-2xl p-4"
         style={{
-          background: "rgba(255, 200, 0, 0.08)",
-          borderColor: "rgba(255, 200, 0, 0.4)",
+          background: "rgba(255, 200, 0, 0.06)",
+          borderColor: "rgba(255, 200, 0, 0.28)",
         }}
       >
         <div className="flex items-center gap-2">
           <span className="text-lg">🔐</span>
           <span className="text-sm font-extrabold text-[var(--color-ink)]">
-            Secret key — keep it safe
+            Backup phrase (optional, recommended)
           </span>
         </div>
         <p className="text-xs text-[var(--color-ink-soft)] mt-1.5 leading-relaxed">
-          We saved this on your device only. Anyone with this string can drain
-          the wallet. Tap to reveal and copy somewhere safe.
+          Saved on this device. If you ever lose the device, this string lets
+          you restore the wallet. Treat it like the PIN to a safe.
         </p>
         <button
           onClick={() => setRevealSecret(!revealSecret)}
@@ -252,7 +305,7 @@ function CreateCard({
             borderColor: "var(--color-border-soft)",
           }}
         >
-          {revealSecret ? "Hide" : "Reveal"} secret key
+          {revealSecret ? "Hide" : "Show"} my backup
         </button>
         {revealSecret && (
           <div className="font-mono text-[11px] break-all mt-3 bg-[var(--color-paper-deep)] rounded-xl p-3 border border-[var(--color-border)] text-[var(--color-ink)]">
@@ -361,12 +414,14 @@ function ReviewCard({
   managed,
   onEnter,
   onSwitch,
+  onSignOut,
 }: {
   name: string;
   pubkey: string;
   managed: boolean;
   onEnter: () => void;
   onSwitch: () => void;
+  onSignOut: () => void;
 }) {
   return (
     <div className="card-ios p-6 space-y-5">
@@ -403,6 +458,14 @@ function ReviewCard({
           }}
         >
           Open terminal →
+        </button>
+      </div>
+      <div className="flex justify-center pt-1">
+        <button
+          onClick={onSignOut}
+          className="text-xs text-[var(--color-ink-soft)] hover:text-[var(--color-red)] font-semibold underline"
+        >
+          Sign out and forget this wallet
         </button>
       </div>
     </div>

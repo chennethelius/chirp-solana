@@ -46,6 +46,13 @@ export function loadMerchantSecret(): StoredSecret | null {
   }
 }
 
+export class WalletStorageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WalletStorageError";
+  }
+}
+
 export function generateManagedWallet(): {
   pubkey: string;
   secretBase58: string;
@@ -53,10 +60,22 @@ export function generateManagedWallet(): {
   const kp = Keypair.generate();
   const secretBase58 = bs58.encode(kp.secretKey);
   const pubkey = kp.publicKey.toBase58();
-  localStorage.setItem(
-    MERCHANT_SECRET_KEY,
-    JSON.stringify({ secretBase58, createdAt: Date.now() } as StoredSecret),
-  );
+  // Browsers can refuse setItem in three quiet ways: Safari private mode,
+  // disabled-storage extensions, and quota exhaustion. If we let the silent
+  // failure ride, the page shows a valid pubkey but the secret never
+  // persists — the cashier is one navigation away from losing the keys.
+  try {
+    localStorage.setItem(
+      MERCHANT_SECRET_KEY,
+      JSON.stringify({ secretBase58, createdAt: Date.now() } as StoredSecret),
+    );
+    const verify = localStorage.getItem(MERCHANT_SECRET_KEY);
+    if (!verify) throw new Error("storage round-trip failed");
+  } catch (e) {
+    throw new WalletStorageError(
+      "This browser is blocking storage, so we can't safely create a wallet here. Try a regular (non-private) window in Chrome, Firefox, or Safari.",
+    );
+  }
   return { pubkey, secretBase58 };
 }
 
