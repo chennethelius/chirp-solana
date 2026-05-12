@@ -42,10 +42,10 @@ The cashier flow at [terminal-web/app/page.tsx](terminal-web/app/page.tsx) is th
 
 ## For judges (start here)
 
-- **[SUBMISSION.md](SUBMISSION.md)** — the pitch, category fit, prior-art comparison, video script, submission-form copy
 - **[PROTOCOL.md](PROTOCOL.md)** — full audio protocol spec (frame layout, tone band, Goertzel decoder, error model, security)
 - **Demo video** — [youtu.be/9eUoUFxS3XQ](https://youtu.be/9eUoUFxS3XQ)
 - **Setup walkthrough** — [instructions.md](instructions.md)
+- **Prebuilt APK** — [Releases](../../releases) (`v0.1.0-demo`)
 
 ---
 
