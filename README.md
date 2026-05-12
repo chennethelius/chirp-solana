@@ -1,6 +1,6 @@
 # Chirp. Pay by sound, on Solana
 
-> **Built for the Easy A "Build for the dApp Store" hackathon · Solana Mobile track.**
+> **Solana Frontier Hackathon submission.** Built for Solana Mobile Seeker, runs on any Android.
 
 **Demo video:** https://youtu.be/9eUoUFxS3XQ
 
@@ -8,19 +8,44 @@
 
 **Chirp is a Solana payments app where money moves between two devices that can hear each other.**
 
-A merchant terminal (web) chirps a short, opaque payment ID over ultrasonic audio that everyone within a few feet hears as a brief bird-like trill. Any phone running Chirp picks up that chirp through its microphone, decodes it, fetches the merchant's menu and price options, and lets the customer pick what they want. The phone then chirps back the order to the cashier — so the cashier sees the order land on screen — and signs the Solana transaction with the user's Phantom wallet via Mobile Wallet Adapter. Funds settle in under a second.
+A merchant terminal (web) chirps a short, opaque payment ID over ultrasonic audio that everyone within a few feet hears as a brief bird-like trill. Any phone running Chirp picks up that chirp through its microphone, decodes it, fetches the merchant's menu and price options, and lets the customer pick what they want. The phone then chirps back the order to the cashier — so the cashier sees the order land on screen — and signs the Solana transaction via Mobile Wallet Adapter (Seed Vault on Seeker, Phantom or any MWA-compatible wallet on other Android devices). Funds settle in under a second.
 
-It feels like Apple Pay, but instead of NFC it uses sound — so it works without tapping, without QR codes, without knowing each other's wallet addresses. Anyone in earshot can pay anyone else in earshot. Inaudible by default, audibly cute when you want it to be.
+It feels like Apple Pay, but instead of NFC it uses sound — so it works without tapping, without QR codes, without pairing, without exchanging wallet addresses. Anyone in earshot can pay anyone in earshot. Inaudible by default, audibly cute when you want it to be.
+
+### The insight
+
+In-person payments solve two problems at once: **proximity binding** ("this customer is paying this terminal") and **settlement** (actually moving the money). NFC and QR codes conflate them. They don't have to be. Chirp uses **sound for proximity** and **Solana for settlement**. The two layers don't need to know about each other — and decoupling them is what lets *one* terminal serve *many* phones in earshot simultaneously, which neither NFC (1:1 tap) nor BLE (1:1 pairing) can do.
 
 ---
 
 ## Why people would want to use it
 
 - **No NFC, no QR codes, no Bluetooth pairing.** If two phones can hear each other, they can transact. Works through cracked screens, gloves, or one-handed.
-- **Group-friendly.** A coffee-shop cashier broadcasts once and everybody in the line can pay independently. A street performer puts a tip jar terminal on a phone and dozens of phones around them can hear it.
-- **Real Solana.** Every payment is a real on-chain transaction. Customer signs with their own wallet (Phantom via Mobile Wallet Adapter on the Seeker). Merchant never holds the funds. SOL or USDC.
+- **One terminal, many payers.** A coffee-shop cashier broadcasts once and everybody in the line can pay independently. A street performer puts a tip jar terminal on a phone and dozens of phones around them can hear it. NFC and BLE are point-to-point; sound is broadcast.
+- **Real Solana, non-custodial.** Every payment is a real on-chain transaction. Customer signs with their own wallet via Mobile Wallet Adapter (Seed Vault on Seeker, Phantom on other Android). Merchant never holds the funds. SOL or USDC supported today; any SPL token in principle.
 - **Verifiable.** Each completed payment shows a tappable signature that opens Solana Explorer — useful both as a receipt and as proof to the merchant.
-- **Built for Solana Mobile.** Chirp is designed around the Seeker's strengths: Seed Vault as the signing root, MWA as the protocol, and the device's better-than-laptop microphone and speaker for clean ultrasonic capture.
+- **Built for Solana Mobile.** Designed around the Seeker's strengths: Seed Vault as the signing root, MWA as the protocol, and the device's better-than-laptop microphone and speaker for clean ultrasonic capture.
+
+## Why it fits Solana
+
+Chirp is software that only makes sense **in physical space** — the transport (sound) is bounded by physical proximity, so the protocol *can't* work unless two devices are actually near each other. It's a digital primitive whose meaning derives from a real-world constraint.
+
+Concrete in-person scenarios we've designed around:
+- **Counter-service retail** — cashier broadcasts, customers in line pay independently
+- **Street performers / buskers / tip jars** — one terminal, no setup for tippers
+- **Events and pop-ups** — vendors with no card reader, no merchant account
+- **Inter-person payment without exchanging addresses** — friends split a bill by both holding phones near the terminal that's already there
+
+### Crypto-accessibility wedge
+
+The cashier flow at [terminal-web/app/page.tsx](terminal-web/app/page.tsx) is the part you can quietly underestimate. A merchant who has never heard of Solana taps one button — Chirp generates a wallet client-side, saves keys to the device, names the shop, and they're charging in under thirty seconds. No card reader. No app store. No KYC. No POS partnership. *Any laptop is a terminal.* Existing on-chain payment apps either (a) ride a card network, which means custody and chargeback cost, or (b) require the merchant to already own POS hardware that supports a kernel update. Chirp's bet is that the cheapest unit of distribution is the device people already own.
+
+## For judges (start here)
+
+- **[SUBMISSION.md](SUBMISSION.md)** — the pitch, category fit, prior-art comparison, video script, submission-form copy
+- **[PROTOCOL.md](PROTOCOL.md)** — full audio protocol spec (frame layout, tone band, Goertzel decoder, error model, security)
+- **Demo video** — [youtu.be/9eUoUFxS3XQ](https://youtu.be/9eUoUFxS3XQ)
+- **Setup walkthrough** — [instructions.md](instructions.md)
 
 ---
 

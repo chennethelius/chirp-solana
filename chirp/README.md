@@ -1,20 +1,23 @@
-# Whisper
+# Chirp (mobile)
 
-**Pay anyone in earshot.** Whisper is a Solana Mobile dApp that uses
-ultrasonic sound (~17–19 kHz, inaudible to most adults) as the transport for
+**Pay anyone in earshot.** Chirp is a Solana Mobile dApp that uses
+ultrasonic sound (19–20.5 kHz, inaudible to most adults) as the transport for
 payment requests. The merchant terminal chirps a short opaque ID, every
-listening Whisper customer in earshot fetches the matching payment intent or
-session over HTTPS, the user reviews + signs via Mobile Wallet Adapter, and
-the tx settles on Solana in 400 ms.
+listening Chirp customer in earshot fetches the matching payment intent or
+session over HTTPS, the user reviews + signs via Mobile Wallet Adapter
+(Seed Vault on Seeker, Phantom or any MWA wallet elsewhere), and the tx
+settles on Solana in 400 ms.
 
-> Built for the Easy A "Build for the dApp Store" hackathon. Solana Mobile
-> Track.
+> Solana Frontier Hackathon submission — Physical World Applications track.
+
+> Note: the Expo project slug and the URL scheme `exp+whisper://` reflect the
+> original name. The app, brand, and code paths are all Chirp.
 
 ---
 
 ## Three modes
 
-Whisper supports three flows from the merchant side:
+Chirp supports three flows from the merchant side:
 
 1. **Charge** — fixed amount, single chirp, single customer pays.
 2. **Tip jar** — broadcast intent at a suggested amount; many customers in
@@ -41,7 +44,7 @@ secure and the only one that gives the customer control over the amount.
 - `src/services/chirpProvider.ts` — picks audio vs. relay channel
 - `src/services/relay.ts` — typed relay client with Zod schemas
 - `src/services/payment.ts` — SOL + USDC transfer builder
-- `src/screens/HomeScreen.tsx` — Whisper-branded mode picker
+- `src/screens/HomeScreen.tsx` — mode picker
 - `src/screens/MerchantScreen.tsx` — Charge / Tip jar / Open terminal
 - `src/screens/CustomerScreen.tsx` — listens, decodes, pays (intent + session)
 - `relay-server/` — Hono HTTP service for intents, sessions, and chirp pubsub

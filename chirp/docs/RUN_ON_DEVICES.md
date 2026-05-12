@@ -1,4 +1,4 @@
-# Running Whisper on two real Seeker phones
+# Running Chirp on two real Seeker phones
 
 This is the **happy path**: two real phones, real ultrasonic audio, no
 BlackHole, no AVD audio routing. Total setup time the first run: ~30-45
@@ -10,7 +10,7 @@ cloud while you do other things).
 | Tool | Why | Install |
 |---|---|---|
 | `adb` | Connect Seekers via USB to your laptop | `brew install --cask android-platform-tools` |
-| `eas-cli` | Build the Whisper APK in EAS cloud | `npm i -g eas-cli` |
+| `eas-cli` | Build the Chirp APK in EAS cloud | `npm i -g eas-cli` |
 | `ngrok` | Expose your localhost relay to the phones over the internet | `brew install ngrok` |
 | `solana` | Airdrop devnet SOL to the Seeker wallets | already installed |
 
@@ -60,7 +60,7 @@ adb devices
 
 If a phone shows `unauthorized`, accept the prompt on the phone.
 
-## Step 3 — Build the Whisper development client APK
+## Step 3 — Build the Chirp development client APK
 
 This is a one-time cloud build. Subsequent code changes don't need a rebuild;
 they hot-reload via Metro.
@@ -126,12 +126,12 @@ npx expo start --dev-client
 
 Now on **each Seeker**:
 
-1. Open the **Whisper** app (the dev client you installed in Step 3)
+1. Open the **Chirp** app (the dev client you installed in Step 3)
 2. It auto-discovers Metro on your laptop's wifi and loads the JS bundle
 3. If it doesn't auto-discover: shake the device, **Configure development
    server**, paste your laptop's local IP from `expo start` output
 
-You should see Whisper's home screen on both phones.
+You should see Chirp's home screen on both phones.
 
 ## Step 6 — Connect wallets and fund them
 
