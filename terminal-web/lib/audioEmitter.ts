@@ -14,11 +14,20 @@ function getCtx(): AudioContext {
   return cachedCtx;
 }
 
+// Gap between trill and ultrasonic frame. Lets mic AGC recover from the
+// audible trill transient before the FSK preamble starts — without this, the
+// preamble decode rate on the FIRST chirp after silence was much worse than
+// on subsequent back-to-back chirps.
+const TRILL_TO_FRAME_GAP_MS = 200;
+
 /**
  * Render a short bird-like trill — three FM glide pulses in the 2.5–5 kHz
  * range. Audible (it's the "Chirp" brand cue) but very short, so the
  * coffee-shop polish stays intact. Each pulse is shaped with a raised-cosine
  * envelope to avoid clicks.
+ *
+ * Amplitude kept low (0.12) so it doesn't pump the receiver's mic AGC —
+ * AGC pumping was eating the FSK preamble on the first chirp after silence.
  */
 function birdTrill(): Float32Array {
   const pulseMs = 70;
@@ -43,7 +52,7 @@ function birdTrill(): Float32Array {
       // Raised cosine envelope for a soft attack/release — sounds bird-like
       // rather than blippy.
       const env = 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
-      out[cursor + n] = 0.35 * env * Math.sin(phase);
+      out[cursor + n] = 0.12 * env * Math.sin(phase);
       phase += omega;
       if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
     }
@@ -66,12 +75,14 @@ export async function emitChirp(payload: ChirpPayload): Promise<number> {
   const trill = birdTrill();
   const bytes = encodeChirp(payload);
   const data = encodeFrame(bytes);
+  const gapSamples = Math.floor((SAMPLE_RATE * TRILL_TO_FRAME_GAP_MS) / 1000);
 
-  const total = trill.length + data.length;
+  const total = trill.length + gapSamples + data.length;
   const buffer = ctx.createBuffer(1, total, SAMPLE_RATE);
   const ch = buffer.getChannelData(0);
   ch.set(trill, 0);
-  ch.set(data, trill.length);
+  // gap is implicit zeros from createBuffer
+  ch.set(data, trill.length + gapSamples);
 
   const source = ctx.createBufferSource();
   source.buffer = buffer;
@@ -80,6 +91,31 @@ export async function emitChirp(payload: ChirpPayload): Promise<number> {
 
   const durationMs = (total / SAMPLE_RATE) * 1000;
   await new Promise((r) => setTimeout(r, durationMs + 100));
+  return durationMs;
+}
+
+/**
+ * Emit just the ultrasonic data frame — no audible trill. Used for the
+ * back-to-back broadcast loop where we don't want a recurring chirp sound,
+ * only the inaudible payload going out as fast as the FSK frame allows.
+ */
+export async function emitChirpData(payload: ChirpPayload): Promise<number> {
+  const ctx = getCtx();
+  if (ctx.state === "suspended") await ctx.resume();
+
+  const bytes = encodeChirp(payload);
+  const data = encodeFrame(bytes);
+
+  const buffer = ctx.createBuffer(1, data.length, SAMPLE_RATE);
+  buffer.getChannelData(0).set(data, 0);
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start();
+
+  const durationMs = (data.length / SAMPLE_RATE) * 1000;
+  await new Promise((r) => setTimeout(r, durationMs + 30));
   return durationMs;
 }
 

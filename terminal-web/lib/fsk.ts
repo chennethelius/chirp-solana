@@ -1,5 +1,5 @@
 /**
- * Whisper audio chirp protocol — 4-tone FSK in the ultrasonic band.
+ * Chirp audio protocol — 4-tone FSK in the ultrasonic band.
  *
  * Frame layout (all symbols are 2 bits, 50ms each):
  *   [PREAMBLE × 6] [PAYLOAD × 44] [POSTAMBLE × 2]
@@ -11,10 +11,18 @@
  */
 
 export const SAMPLE_RATE = 48_000;
-// Pushed up toward the inaudible band (most adults can't hear above ~17 kHz,
-// teens up to ~20 kHz). Stays below the 24 kHz Nyquist limit at 48 kHz sample
-// rate. Must match exactly between terminal-web and chirp.
-export const TONES = [19_000, 19_500, 20_000, 20_500] as const;
+// Pushed deeper into the inaudible band (most adults can't hear above ~17 kHz;
+// the previous 19 kHz floor was still audible to young ears). Stays below the
+// 24 kHz Nyquist limit at 48 kHz sample rate. Must match exactly between
+// terminal-web and chirp — any drift here breaks decode.
+export const TONES = [19_500, 20_000, 20_500, 21_000] as const;
+// Per-tone amplitude scaling to compensate for consumer-speaker rolloff above
+// ~18 kHz. Typical laptop speakers attenuate ~3 dB / 500 Hz in this band, so
+// without pre-emphasis the highest tone arrives at the mic ~4× weaker than
+// the lowest — making symbol 3 misdetect way more often than symbol 0.
+// Max scaled amp = 0.5 × 1.6 = 0.80 — dropped from 0.96 to reduce audible
+// intermodulation distortion at the speaker cone.
+export const TONE_PREEMPH = [1.0, 1.2, 1.4, 1.6] as const;
 export const SYMBOL_MS = 50;
 export const SYMBOL_SAMPLES = (SAMPLE_RATE * SYMBOL_MS) / 1000;
 export const PREAMBLE: ReadonlyArray<0 | 1 | 2 | 3> = [0, 3, 0, 3, 1, 2];
@@ -72,11 +80,13 @@ export function encodeFrame(payload: Uint8Array): Float32Array {
   let phase = 0;
 
   for (let s = 0; s < symbols.length; s++) {
-    const freq = TONES[symbols[s]];
+    const sym = symbols[s];
+    const freq = TONES[sym];
     const omega = (2 * Math.PI * freq) / SAMPLE_RATE;
+    const preEmph = TONE_PREEMPH[sym];
     for (let n = 0; n < SYMBOL_SAMPLES; n++) {
       const i = s * SYMBOL_SAMPLES + n;
-      let amp = 0.6;
+      let amp = 0.5 * preEmph;
       if (i < taperSamples) amp *= i / taperSamples;
       else if (i >= totalSamples - taperSamples)
         amp *= (totalSamples - 1 - i) / taperSamples;
@@ -109,12 +119,17 @@ function goertzelPower(samples: Float32Array, freq: number): number {
 }
 
 /**
- * Detect the strongest tone in the window, returning the symbol value (0-3)
- * if any tone is meaningfully louder than the noise floor, else null.
+ * Detect the strongest tone in the window. Always returns the best-guess
+ * symbol when the window has any audio energy at all, with a `confident`
+ * flag based on SNR. Returns null only on near-zero energy (silence).
+ *
+ * Bailing on every low-SNR symbol was the dominant decode failure in real
+ * rooms; the CRC at frame-end is the real arbiter.
  */
 function detectSymbol(samples: Float32Array): {
   symbol: Symbol;
   snr: number;
+  confident: boolean;
 } | null {
   const powers = TONES.map((f) => goertzelPower(samples, f));
   let maxIdx = 0;
@@ -124,8 +139,9 @@ function detectSymbol(samples: Float32Array): {
   const others = powers.filter((_, i) => i !== maxIdx);
   const second = Math.max(...others);
   const snr = second === 0 ? Infinity : max / second;
-  if (snr < 1.5) return null;
-  return { symbol: maxIdx as Symbol, snr };
+  const totalEnergy = powers.reduce((a, b) => a + b, 0);
+  if (totalEnergy < 1e-6) return null;
+  return { symbol: maxIdx as Symbol, snr, confident: snr >= 1.5 };
 }
 
 export type FskDebugEvent =
@@ -160,28 +176,38 @@ export class FskDecoder {
       const detected = detectSymbol(window);
       this.advance(SYMBOL_SAMPLES);
 
-      if (!detected) {
-        if (this.inFrame) this.resetFrame();
-        this.symbolHistory = [];
-        continue;
+      // True silence (no audio energy at all). Don't reset mid-frame — a
+      // brief dropout shouldn't kill the frame; we'll let CRC arbitrate.
+      const sym: Symbol = detected ? detected.symbol : 0;
+      const confident = detected ? detected.confident : false;
+      if (detected) {
+        this.onDebug?.({ type: "symbol", sym, snr: detected.snr });
       }
-
-      const sym = detected.symbol;
-      this.onDebug?.({ type: "symbol", sym, snr: detected.snr });
 
       if (!this.inFrame) {
         this.symbolHistory.push(sym);
         if (this.symbolHistory.length > PREAMBLE.length) {
           this.symbolHistory.shift();
         }
-        if (
-          this.symbolHistory.length === PREAMBLE.length &&
-          PREAMBLE.every((s, i) => s === this.symbolHistory[i])
-        ) {
-          this.inFrame = true;
-          this.frameSymbols = [];
-          this.symbolHistory = [];
-          this.onDebug?.({ type: "preamble" });
+        if (this.symbolHistory.length === PREAMBLE.length) {
+          // Tolerate 1-of-6 mismatches; require ≥3 confident matches to guard
+          // against payload sections aliasing as preamble at low SNR.
+          let matches = 0;
+          let confidentMatches = 0;
+          for (let i = 0; i < PREAMBLE.length; i++) {
+            if (PREAMBLE[i] === this.symbolHistory[i]) {
+              matches++;
+              // We don't track per-history-slot confidence; use the current
+              // detection's confidence as a proxy for "this stream is hot."
+              if (confident) confidentMatches++;
+            }
+          }
+          if (matches >= 5 && confidentMatches >= 1) {
+            this.inFrame = true;
+            this.frameSymbols = [];
+            this.symbolHistory = [];
+            this.onDebug?.({ type: "preamble" });
+          }
         }
         continue;
       }
@@ -189,13 +215,14 @@ export class FskDecoder {
       this.frameSymbols.push(sym);
       if (this.frameSymbols.length === PAYLOAD_SYMBOLS + POSTAMBLE.length) {
         const postamble = this.frameSymbols.slice(PAYLOAD_SYMBOLS);
-        const ok = POSTAMBLE.every((s, i) => s === postamble[i]);
-        if (ok) {
-          const payloadSyms = this.frameSymbols.slice(0, PAYLOAD_SYMBOLS);
-          const bytes = symbolsToBytes(payloadSyms);
-          this.onPayload(bytes);
-        }
-        this.onDebug?.({ type: "frame", ok });
+        const postambleOk = POSTAMBLE.every((s, i) => s === postamble[i]);
+        // Postamble is a hint. Always emit bytes and let the CRC inside
+        // decodeChirp accept or reject — CRC16 is far stronger than a
+        // 2-symbol postamble check.
+        const payloadSyms = this.frameSymbols.slice(0, PAYLOAD_SYMBOLS);
+        const bytes = symbolsToBytes(payloadSyms);
+        this.onPayload(bytes);
+        this.onDebug?.({ type: "frame", ok: postambleOk });
         this.resetFrame();
       }
     }

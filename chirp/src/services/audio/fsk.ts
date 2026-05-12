@@ -1,5 +1,5 @@
 /**
- * Whisper audio chirp protocol — 4-tone FSK in the ultrasonic band.
+ * Chirp audio protocol — 4-tone FSK in the ultrasonic band.
  *
  * Frame layout (all symbols are 2 bits, 50ms each):
  *   [PREAMBLE × 6] [PAYLOAD × 44] [POSTAMBLE × 2]
@@ -11,10 +11,18 @@
  */
 
 export const SAMPLE_RATE = 48_000;
-// Pushed up toward the inaudible band (most adults can't hear above ~17 kHz,
-// teens up to ~20 kHz). Stays below the 24 kHz Nyquist limit at 48 kHz sample
-// rate. Must match exactly between terminal-web and chirp.
-export const TONES = [19_000, 19_500, 20_000, 20_500] as const;
+// Pushed deeper into the inaudible band (most adults can't hear above ~17 kHz;
+// the previous 19 kHz floor was still audible to young ears). Stays below the
+// 24 kHz Nyquist limit at 48 kHz sample rate. Must match exactly between
+// terminal-web and chirp — any drift here breaks decode.
+export const TONES = [19_500, 20_000, 20_500, 21_000] as const;
+// Per-tone amplitude scaling to compensate for consumer-speaker rolloff above
+// ~18 kHz. Typical laptop speakers attenuate ~3 dB / 500 Hz in this band, so
+// without pre-emphasis the highest tone arrives at the mic ~4× weaker than
+// the lowest — making symbol 3 misdetect way more often than symbol 0.
+// Max scaled amp = 0.5 × 1.6 = 0.80 — dropped from 0.96 to reduce audible
+// intermodulation distortion at the speaker cone.
+export const TONE_PREEMPH = [1.0, 1.2, 1.4, 1.6] as const;
 export const SYMBOL_MS = 50;
 export const SYMBOL_SAMPLES = (SAMPLE_RATE * SYMBOL_MS) / 1000;
 export const PREAMBLE: ReadonlyArray<0 | 1 | 2 | 3> = [0, 3, 0, 3, 1, 2];
@@ -72,11 +80,13 @@ export function encodeFrame(payload: Uint8Array): Float32Array {
   let phase = 0;
 
   for (let s = 0; s < symbols.length; s++) {
-    const freq = TONES[symbols[s]];
+    const sym = symbols[s];
+    const freq = TONES[sym];
     const omega = (2 * Math.PI * freq) / SAMPLE_RATE;
+    const preEmph = TONE_PREEMPH[sym];
     for (let n = 0; n < SYMBOL_SAMPLES; n++) {
       const i = s * SYMBOL_SAMPLES + n;
-      let amp = 0.6;
+      let amp = 0.5 * preEmph;
       if (i < taperSamples) amp *= i / taperSamples;
       else if (i >= totalSamples - taperSamples)
         amp *= (totalSamples - 1 - i) / taperSamples;
@@ -109,12 +119,19 @@ function goertzelPower(samples: Float32Array, freq: number): number {
 }
 
 /**
- * Detect the strongest tone in the window, returning the symbol value (0-3)
- * if any tone is meaningfully louder than the noise floor, else null.
+ * Detect the strongest tone in the window. Returns the best-guess symbol
+ * along with an SNR (max-tone-power : second-tone-power ratio) and a
+ * `confident` flag.
+ *
+ * Returns null only when the window is essentially silent (all tones at
+ * noise-floor level). Otherwise we always return our best guess and let the
+ * upstream decoder + CRC arbitrate. Bailing on every low-SNR symbol turned
+ * out to be the dominant failure mode in real rooms.
  */
 function detectSymbol(samples: Float32Array): {
   symbol: Symbol;
   snr: number;
+  confident: boolean;
 } | null {
   const powers = TONES.map((f) => goertzelPower(samples, f));
   let maxIdx = 0;
@@ -124,8 +141,12 @@ function detectSymbol(samples: Float32Array): {
   const others = powers.filter((_, i) => i !== maxIdx);
   const second = Math.max(...others);
   const snr = second === 0 ? Infinity : max / second;
-  if (snr < 1.5) return null;
-  return { symbol: maxIdx as Symbol, snr };
+  // Pure noise floor: all tones essentially equal AND total energy negligible.
+  // Use the sum of all powers as a coarse energy gate so we don't decode
+  // when there's nothing in this window.
+  const totalEnergy = powers.reduce((a, b) => a + b, 0);
+  if (totalEnergy < 1e-6) return null;
+  return { symbol: maxIdx as Symbol, snr, confident: snr >= 1.5 };
 }
 
 export type FskDebugEvent =
@@ -206,12 +227,11 @@ export class FskDecoder {
     this.advance(SYMBOL_SAMPLES);
 
     if (!detected) {
-      // Lost signal mid-frame. Bail and resume hunting.
-      console.log(
-        `[fsk] frame lost — silence at symbol ${this.frameSymbols.length}/${PAYLOAD_SYMBOLS + POSTAMBLE.length}`,
-      );
+      // Window had near-zero energy — fill with a placeholder symbol (0) and
+      // continue. The CRC at frame-end will still reject if too much was lost.
+      // This is FAR better than bailing the whole frame on a single dropout.
+      this.frameSymbols.push(0);
       this.onDebug?.({ type: "silence" });
-      this.resetToHunting();
       return true;
     }
 
@@ -219,18 +239,18 @@ export class FskDecoder {
     this.onDebug?.({ type: "symbol", sym: detected.symbol, snr: detected.snr });
 
     if (this.frameSymbols.length === PAYLOAD_SYMBOLS + POSTAMBLE.length) {
-      // Frame complete. Verify postamble.
+      // Frame complete. Postamble is a hint, not a gate — the CRC inside
+      // the payload (validated by decodeChirp downstream) is the real
+      // arbiter. Always emit the bytes and let decodeChirp accept or reject.
       const postamble = this.frameSymbols.slice(PAYLOAD_SYMBOLS);
-      const ok = POSTAMBLE.every((s, i) => s === postamble[i]);
-      this.onDebug?.({ type: "frame", ok });
+      const postambleOk = POSTAMBLE.every((s, i) => s === postamble[i]);
+      this.onDebug?.({ type: "frame", ok: postambleOk });
+      const payloadSyms = this.frameSymbols.slice(0, PAYLOAD_SYMBOLS);
+      const bytes = symbolsToBytes(payloadSyms);
       console.log(
-        `[fsk] frame complete — postamble ${ok ? "OK ✓" : "FAIL ✗"} (got [${postamble.join(",")}], expected [${POSTAMBLE.join(",")}])`,
+        `[fsk] frame complete — postamble ${postambleOk ? "OK ✓" : "soft ⚠"} (got [${postamble.join(",")}], expected [${POSTAMBLE.join(",")}]) — letting CRC arbitrate`,
       );
-      if (ok) {
-        const payloadSyms = this.frameSymbols.slice(0, PAYLOAD_SYMBOLS);
-        const bytes = symbolsToBytes(payloadSyms);
-        this.onPayload(bytes);
-      }
+      this.onPayload(bytes);
       this.resetToHunting();
     }
     return true;
@@ -238,17 +258,50 @@ export class FskDecoder {
 
   /**
    * Returns true if the next PREAMBLE_SAMPLES of buffer (starting at offset 0)
-   * decode to the expected preamble pattern. All 6 symbols must match.
+   * decode close enough to the expected preamble pattern. We tolerate up to
+   * 1 mismatch out of 6 symbols — single-symbol misdetection is extremely
+   * common in real rooms (echo, transient noise, mic AGC), and being strict
+   * about the preamble was the dominant cause of dropped frames. The payload
+   * still has CRC16 to catch genuinely-wrong locks.
+   *
+   * Logs a per-symbol diagnostic line only when ≥3 symbols match — this is the
+   * "almost a preamble" signal we care about. Pure-noise windows are skipped
+   * to avoid flooding the log.
    */
   private tryLockOnPreamble(): boolean {
+    let matches = 0;
+    let confidentMatches = 0;
+    const detected: Array<{ sym: number; snr: number; expected: number; ok: boolean } | null> = [];
     for (let i = 0; i < PREAMBLE.length; i++) {
       const start = i * SYMBOL_SAMPLES;
       const window = this.buf.subarray(start, start + SYMBOL_SAMPLES);
-      const detected = detectSymbol(window);
-      if (!detected) return false;
-      if (detected.symbol !== PREAMBLE[i]) return false;
+      const det = detectSymbol(window);
+      if (!det) {
+        detected.push(null);
+        continue;
+      }
+      const ok = det.symbol === PREAMBLE[i];
+      detected.push({ sym: det.symbol, snr: det.snr, expected: PREAMBLE[i], ok });
+      if (ok) {
+        matches++;
+        if (det.confident) confidentMatches++;
+      }
     }
-    return true;
+    if (matches >= 3) {
+      const trace = detected
+        .map((d, i) =>
+          d
+            ? `${i}:${d.sym}${d.ok ? "✓" : `✗(want${d.expected})`}/snr${d.snr.toFixed(2)}`
+            : `${i}:silent`,
+        )
+        .join(" ");
+      console.log(
+        `[fsk] preamble candidate matches=${matches}/${PREAMBLE.length} confident=${confidentMatches} | ${trace}`,
+      );
+    }
+    // Need ≥5/6 matches AND ≥3 confident — guards against aliasing onto a
+    // payload section that happens to look preamble-shaped at low SNR.
+    return matches >= 5 && confidentMatches >= 3;
   }
 
   private advance(n: number) {

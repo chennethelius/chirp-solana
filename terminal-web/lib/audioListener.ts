@@ -1,4 +1,4 @@
-import { decodeChirp } from "./chirp";
+import { AccumulatorProgress, PayloadAccumulator } from "./accumulator";
 import { FskDecoder, FskDebugEvent, SAMPLE_RATE } from "./fsk";
 
 export type ChirpHeard = { requestId: string };
@@ -13,6 +13,7 @@ export type ListenerStats = {
   preambles: number;
   framesOk: number;
   framesBad: number;
+  progress: AccumulatorProgress | null;
 };
 
 export type Listener = {
@@ -30,6 +31,7 @@ const EMPTY_STATS: ListenerStats = {
   preambles: 0,
   framesOk: 0,
   framesBad: 0,
+  progress: null,
 };
 
 // Browser microphone listener. Captures audio via getUserMedia + a
@@ -71,9 +73,17 @@ export async function startListening(
     subs.forEach((s) => s(snapshot));
   };
 
+  const accumulator = new PayloadAccumulator(
+    (decoded) => {
+      onChirp({ requestId: decoded.requestId });
+    },
+    (progress) => {
+      stats.progress = progress;
+      emit();
+    },
+  );
   const decoder = new FskDecoder((bytes) => {
-    const decoded = decodeChirp(bytes);
-    if (decoded) onChirp({ requestId: decoded.requestId });
+    accumulator.feed(bytes);
   });
   // The mobile FskDecoder has a `subscribeDebug` hook; the web copy doesn't
   // (yet). Patch the streaming decoder via the new optional debug callback —

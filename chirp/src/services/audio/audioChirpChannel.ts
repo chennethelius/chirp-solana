@@ -5,13 +5,14 @@ import {
   ChirpChannel,
   ChirpListener,
   ChirpPayload,
-  decodeChirp,
   encodeChirp,
 } from "../chirp";
 import { encodeFrame, FskDebugEvent, FskDecoder, SAMPLE_RATE } from "./fsk";
+import { AccumulatorProgress, PayloadAccumulator } from "./accumulator";
 
 // Audible bird-trill brand cue, prepended to every chirp transmission.
 // Three FM glide pulses in the 2.5–5 kHz range, raised-cosine envelope.
+// Amp kept low (0.12) to avoid pumping the receiver's mic AGC.
 function birdTrill(): Float32Array {
   const pulseMs = 70;
   const gapMs = 30;
@@ -31,7 +32,7 @@ function birdTrill(): Float32Array {
       const freq = f0 + (f1 - f0) * t;
       const omega = (2 * Math.PI * freq) / SAMPLE_RATE;
       const env = 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
-      out[cursor + n] = 0.35 * env * Math.sin(phase);
+      out[cursor + n] = 0.12 * env * Math.sin(phase);
       phase += omega;
       if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
     }
@@ -40,10 +41,15 @@ function birdTrill(): Float32Array {
   return out;
 }
 
+// Silence gap between trill and FSK frame, so mic AGC has time to recover
+// from the audible trill before the preamble starts.
+const TRILL_TO_FRAME_GAP_MS = 200;
+
 const MIC_BUFFER_SAMPLES = 4800; // 100ms chunks
 
 export type ChirpDebugEvent =
   | { type: "audio"; peak: number; rms: number; chunks: number }
+  | { type: "progress"; progress: AccumulatorProgress }
   | FskDebugEvent;
 
 export class AudioChirpChannel implements ChirpChannel {
@@ -51,6 +57,7 @@ export class AudioChirpChannel implements ChirpChannel {
   private recorder: AudioRecorder | null = null;
   private adapter: RecorderAdapterNode | null = null;
   private decoder: FskDecoder | null = null;
+  private accumulator: PayloadAccumulator | null = null;
   private listeners = new Set<ChirpListener>();
   private debugListeners = new Set<(e: ChirpDebugEvent) => void>();
   private chunkCount = 0;
@@ -71,12 +78,14 @@ export class AudioChirpChannel implements ChirpChannel {
     const trill = birdTrill();
     const bytes = encodeChirp(payload);
     const data = encodeFrame(bytes);
+    const gapSamples = Math.floor((SAMPLE_RATE * TRILL_TO_FRAME_GAP_MS) / 1000);
 
-    const total = trill.length + data.length;
+    const total = trill.length + gapSamples + data.length;
     const buffer = ctx.createBuffer(1, total, SAMPLE_RATE);
     const merged = new Float32Array(total);
     merged.set(trill, 0);
-    merged.set(data, trill.length);
+    // gap is implicit zeros
+    merged.set(data, trill.length + gapSamples);
     buffer.copyToChannel(merged, 0);
 
     const source = ctx.createBufferSource();
@@ -137,21 +146,29 @@ export class AudioChirpChannel implements ChirpChannel {
       bufferLengthInSamples: MIC_BUFFER_SAMPLES,
     });
     const adapter = ctx.createRecorderAdapter();
-    this.decoder = new FskDecoder(
-      (bytes) => {
-        const decoded = decodeChirp(bytes);
-        console.log("[chirp] frame decoded:", decoded);
-        if (!decoded) return;
+    this.accumulator = new PayloadAccumulator(
+      (decoded) => {
+        console.log("[chirp] payload accepted (post-accumulator):", decoded);
         for (const l of this.listeners) {
           try { l(decoded); } catch {}
         }
+      },
+      (progress) => {
+        this.emitDebug({ type: "progress", progress });
+      },
+    );
+    this.decoder = new FskDecoder(
+      (bytes) => {
+        // Hand every candidate frame (regardless of postamble) to the
+        // accumulator. It runs CRC on the raw bytes first; if that fails it
+        // adds them to the per-position vote tally and tries again on the
+        // current best-guess. Either path can succeed.
+        this.accumulator?.feed(bytes);
       },
       (e) => {
         if (e.type === "preamble") console.log("[chirp] PREAMBLE matched");
         else if (e.type === "frame") console.log("[chirp] frame complete, ok=", e.ok);
         else if (e.type === "symbol") {
-          // Log symbol detections too — but throttled at FSK level via SNR>1.5 filter.
-          // (silence events are filtered out below.)
           console.log(`[chirp] sym=${e.sym} snr=${e.snr.toFixed(2)}`);
         }
         this.emitDebug(e);
@@ -194,6 +211,7 @@ export class AudioChirpChannel implements ChirpChannel {
     this.recorder = null;
     this.adapter = null;
     this.decoder = null;
+    this.accumulator = null;
   }
 }
 

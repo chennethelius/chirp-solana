@@ -150,7 +150,7 @@ function testTwoFramesInARow() {
 function simulateIRL(
   pcm: Float32Array,
   opts: {
-    speakerToneAttenDb: [number, number, number, number]; // per-tone (19, 19.5, 20, 20.5)
+    speakerToneAttenDb: [number, number, number, number]; // per-tone (19.5, 20, 20.5, 21)
     micRolloffDb: number; // additional flat rolloff applied to whole band
     distanceFactor: number; // 0..1, scalar amplitude
     noiseRmsDb: number; // dB relative to signal full scale
@@ -195,7 +195,7 @@ function testIrlNearField() {
   const payload = buildPayload();
   const pcm = encodeFrame(payload);
   const channel = simulateIRL(pcm, {
-    speakerToneAttenDb: [-3, -5, -8, -12],
+    speakerToneAttenDb: [-5, -8, -12, -16],
     micRolloffDb: -2,
     distanceFactor: 0.8,
     noiseRmsDb: -45,
@@ -215,7 +215,7 @@ function testIrlAtCounter() {
   const payload = buildPayload();
   const pcm = encodeFrame(payload);
   const channel = simulateIRL(pcm, {
-    speakerToneAttenDb: [-5, -8, -12, -16],
+    speakerToneAttenDb: [-8, -12, -16, -20],
     micRolloffDb: -4,
     distanceFactor: 0.3,
     noiseRmsDb: -38,
@@ -239,7 +239,7 @@ function testIrlChallenging() {
   const payload = buildPayload();
   const pcm = encodeFrame(payload);
   const channel = simulateIRL(pcm, {
-    speakerToneAttenDb: [-8, -12, -15, -20],
+    speakerToneAttenDb: [-12, -16, -20, -25],
     micRolloffDb: -5,
     distanceFactor: 0.15,
     noiseRmsDb: -32,
